@@ -74,25 +74,25 @@ class Config:
     AGENT_LLMS: Dict[str, str] = None
     
     def __post_init__(self):
-        # Agent-LLM 映射配置
+        # Agent-LLM 映射配置（从环境变量读取）
         self.AGENT_LLMS = {
-            # 主控(LeadAuthor)：规划+决策，需要强推理能力
+            # 主控(LeadAuthor)：规划+决策
             "lead_author": {
-                "provider": "deepseek",
-                "model": "deepseek-reasoner",  # R1 推理模型
-                "temperature": 0.7
+                "provider": os.getenv("AGENT_LEAD_AUTHOR_PROVIDER", "deepseek"),
+                "model": os.getenv("AGENT_LEAD_AUTHOR_MODEL", "deepseek-reasoner"),
+                "temperature": float(os.getenv("AGENT_LEAD_AUTHOR_TEMP", "0.7"))
             },
-            # 审查员(Reviewer)：文献综述+Gap分析，需要中文理解
+            # 审查员(Reviewer)：文献综述+Gap分析
             "reviewer": {
-                "provider": "deepseek",
-                "model": "deepseek-reasoner",  # 同样用推理模型
-                "temperature": 0.5
+                "provider": os.getenv("AGENT_REVIEWER_PROVIDER", "deepseek"),
+                "model": os.getenv("AGENT_REVIEWER_MODEL", "deepseek-reasoner"),
+                "temperature": float(os.getenv("AGENT_REVIEWER_TEMP", "0.5"))
             },
-            # 数据研究员(DataResearcher)：代码生成，需要代码能力
+            # 数据研究员(DataResearcher)：代码生成
             "data_researcher": {
-                "provider": "tencent",
-                "model": "doubao-seed-2.0-code",  # 豆包代码能力强
-                "temperature": 0.3
+                "provider": os.getenv("AGENT_DATA_PROVIDER", "tencent"),
+                "model": os.getenv("AGENT_DATA_MODEL", "doubao-seed-2.0-code"),
+                "temperature": float(os.getenv("AGENT_DATA_TEMP", "0.3"))
             }
         }
     
