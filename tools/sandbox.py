@@ -250,9 +250,48 @@ class DataAnalyzer:
         return analysis
     
     def _generate_code(self, requirement: str, context: Dict = None) -> str:
-        """使用 LLM 生成数据分析代码"""
-        # TODO: 接入 LLM 生成代码
-        return self._get_mock_code(requirement)
+        """使用 LLM 真实生成数据分析代码"""
+        if not self.llm_client:
+            print("[⚠️ 数据研究员] 未配置 LLM 客户端，使用 Mock 代码")
+            return self._get_mock_code(requirement)
+            
+        print("[📊 数据研究员] 正在思考并编写 Python 代码...")
+        
+        # 将前置文献审查的发现作为上下文喂给写代码的模型
+        context_str = ""
+        if context and 'research_gaps' in context:
+            gaps = json.dumps(context['research_gaps'], ensure_ascii=False)
+            context_str = f"当前研究空白背景：{gaps}\n请在代码分析中尽可能回应这些背景。"
+
+        try:
+            # 这里的 system prompt 可以引入 prompts 模块里的 DATA_RESEARCHER_CODE_GENERATION_PROMPT
+            from prompts.system_prompts import DATA_RESEARCHER_CODE_GENERATION_PROMPT
+            
+            response = self.llm_client.chat.completions.create(
+                model=os.getenv("MODEL_NAME", "deepseek-chat"), # 这里会自动使用传入的 client 的对应模型
+                temperature=0.1, # 编写代码的温度要尽可能的低，保持严谨
+                messages=[
+                    {"role": "system", "content": DATA_RESEARCHER_CODE_GENERATION_PROMPT},
+                    {"role": "user", "content": f"{context_str}\n\n我的具体数据分析需求是：{requirement}\n\n请直接输出 Python 代码，不要有任何额外的文字解释。"}
+                ]
+            )
+            
+            code = response.choices[0].message.content.strip()
+            
+            # 🛡️ 清洗防御：去除大模型经常带上的 Markdown 代码块标记
+            if code.startswith("```python"):
+                code = code[9:]
+            elif code.startswith("```"):
+                code = code[3:]
+            
+            if code.endswith("```"):
+                code = code[:-3]
+                
+            return code.strip()
+            
+        except Exception as e:
+            print(f"[⚠️ 数据研究员] 代码生成失败: {e}，回退到 Mock 代码")
+            return self._get_mock_code(requirement)
     
     def _get_mock_code(self, requirement: str) -> str:
         """Mock 代码示例"""
