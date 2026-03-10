@@ -199,8 +199,9 @@ class DataAnalyzer:
     整合代码生成、执行、结果解析
     """
     
-    def __init__(self, llm_client=None, sandbox_timeout: int = 120):
+    def __init__(self, llm_client=None, llm_model=None, sandbox_timeout: int = 120):
         self.llm_client = llm_client
+        self.llm_model = llm_model  # 存储模型名称
         # 使用配置中的输出目录，避免嵌套
         output_dir = os.getenv("OUTPUT_DIR", "./output")
         self.sandbox = PythonSandbox(timeout=sandbox_timeout, output_dir=output_dir)
@@ -268,7 +269,7 @@ class DataAnalyzer:
             from prompts.system_prompts import DATA_RESEARCHER_CODE_GENERATION_PROMPT
             
             response = self.llm_client.chat.completions.create(
-                model=os.getenv("MODEL_NAME", "deepseek-chat"), # 这里会自动使用传入的 client 的对应模型
+                model=self.llm_model or "deepseek-chat",  # 使用传入的模型，否则回退
                 temperature=0.1, # 编写代码的温度要尽可能的低，保持严谨
                 messages=[
                     {"role": "system", "content": DATA_RESEARCHER_CODE_GENERATION_PROMPT},

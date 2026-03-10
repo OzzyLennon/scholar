@@ -487,7 +487,8 @@ class DataResearcherAgent:
                 llm_client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
                 print(f"[📊 数据研究员] 使用 LLM: {llm_config.model}")
             
-            self.analyzer = DataAnalyzer(llm_client=llm_client)
+            # 传递 client 和 model 名称
+            self.analyzer = DataAnalyzer(llm_client=llm_client, llm_model=llm_config.model if llm_config else None)
             self.use_sandbox = True
             print("[📊 数据研究员] Python 沙箱已激活")
         except Exception as e:
