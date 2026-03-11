@@ -187,12 +187,19 @@ class ExtractorAgent:
         self.vector_db_path = vector_db_path or config.VECTOR_DB_DIR
         self.zotero_store = []
         self.chroma_store = []  # 始终初始化，避免 else 分支 AttributeError
-        try:
-            from tools.vector_store import VectorStoreManager
-            self.vector_store = VectorStoreManager(self.vector_db_path)
-            self.use_real_vector = True
-        except Exception:
-            self.vector_store = None; self.use_real_vector = False
+        
+        # 如果配置跳过向量库，则强制使用Mock模式
+        if getattr(config, 'SKIP_VECTOR_DB', False):
+            self.vector_store = None
+            self.use_real_vector = False
+            print("[📦 提取员] SKIP_VECTOR_DB=true，使用Mock模式")
+        else:
+            try:
+                from tools.vector_store import VectorStoreManager
+                self.vector_store = VectorStoreManager(self.vector_db_path)
+                self.use_real_vector = True
+            except Exception:
+                self.vector_store = None; self.use_real_vector = False
     
     def extract_and_store(self, papers: List[Dict]) -> Dict:
         # 🌟 恢复：高亮打印基于算法加权后的 TOP3 权威文献
@@ -228,9 +235,14 @@ class ExtractorAgent:
     
     def _clean_paper(self, paper: Dict) -> Dict:
         """恢复原版的数据清洗：对齐字段并提取关键字"""
+        # ChromaDB不接受空列表作为metadata，需要处理
+        authors = paper.get("authors", [])
+        if isinstance(authors, list) and len(authors) == 0:
+            authors = "Unknown"
+        
         return {
             "title": paper.get("title", "").strip(),
-            "authors": paper.get("authors", []),
+            "authors": authors,
             "year": paper.get("year", 2023),
             "abstract": paper.get("abstract", "")[:600],
             "doi": paper.get("doi", ""),

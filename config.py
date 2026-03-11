@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# 全局开关：跳过ChromaDB向量库（首次运行需下载79MB ONNX模型，网络慢时可跳过）
+SKIP_VECTOR_DB = os.getenv("SKIP_VECTOR_DB", "true").lower() == "true"
+
 @dataclass
 class LLMConfig:
     """单个LLM配置"""

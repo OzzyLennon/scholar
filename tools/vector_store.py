@@ -1,6 +1,6 @@
 # ==========================================
 # 工具层 - 向量存储引擎 (究极完全体)
-# 融合：ChromaDB 支持 + 纯本地倒排索引兜底 + Hybrid RAG 权威性重排
+# 融合：ChromaDB 支持 + 纯本地倒排索引兜底 + Hybrid RAG 权威性重排 + Metadata 净化
 # ==========================================
 import json
 import os
@@ -177,6 +177,7 @@ class LocalVectorStore(VectorStore):
 # 3. 统一调度层 (负责 Hybrid RAG 权威重排)
 # ==========================================
 class VectorStoreManager:
+    # 🌟 核心修改：重新把 prefer_chroma 改回 True，激活高性能向量库！
     def __init__(self, persist_directory: str = "./vector_db", prefer_chroma: bool = True):
         self.store = None
         
@@ -203,25 +204,41 @@ class VectorStoreManager:
                 p_id = paper.get('doi') or f"p_{hash(paper.get('title'))}"
                 title = paper.get('title', '')
                 abstract = paper.get('abstract', '')
-                meta = paper
+                raw_meta = paper
             else:
                 p_id = paper.doi or f"p_{hash(paper.title)}"
                 title = paper.title
                 abstract = paper.abstract
-                meta = paper.to_dict() if hasattr(paper, 'to_dict') else {}
+                raw_meta = paper.to_dict() if hasattr(paper, 'to_dict') else {}
             
             # 构建嵌入用的核心文本 (Title + Abstract)
             content = f"【标题】{title}\n\n【摘要】{abstract}"
             ids.append(str(p_id))
             documents.append(content)
-            metadatas.append(meta)
+            
+            # 🌟 核心防御：Metadata 净化器 (确保 ChromaDB 不会因为 List 或 None 报错)
+            clean_meta = {}
+            for k, v in raw_meta.items():
+                if v is None:
+                    clean_meta[k] = ""
+                elif isinstance(v, list):
+                    clean_meta[k] = ", ".join([str(x) for x in v])
+                elif isinstance(v, (str, int, float, bool)):
+                    clean_meta[k] = v
+                else:
+                    clean_meta[k] = str(v)
+            
+            metadatas.append(clean_meta)
         
         if ids:
-            self.store.add(ids, documents, metadatas)
+            try:
+                self.store.add(ids, documents, metadatas)
+            except Exception as e:
+                print(f"[⚠️ 向量库入库错误] {e}")
         return len(ids)
     
     def search(self, query: str, n_results: int = 5) -> List[Dict]:
-        """🌟 核心升级：基于权威性的混合检索 (Hybrid RAG Re-ranking)"""
+        """基于权威性的混合检索 (Hybrid RAG Re-ranking)"""
         
         # 1. 扩大底层召回范围 (取 3 倍候选集)
         candidates_count = n_results * 3
@@ -241,24 +258,21 @@ class VectorStoreManager:
             max_dist = 0.001
             
         for i, doc in enumerate(docs):
-            # a. 基础检索相关性得分 (距离越小，或排名越靠前，得分越高)
-            # 结合 distance 和 召回排名 计算基础分
+            # a. 基础检索相关性得分
             distance_score = 1.0 - (doc.get('distance', max_dist) / max_dist)
             rank_score = 1.0 - (i / len(docs)) * 0.5
             semantic_score = (distance_score + rank_score) / 2.0
             
-            # b. 权威性得分 (从 metadata 中读取此前爬虫阶段计算好的分)
-            auth_score = doc.get('metadata', {}).get('authority_score', 1.0)
+            # b. 权威性得分
+            auth_score = float(doc.get('metadata', {}).get('authority_score', 1.0))
             
             # c. 平滑与混合打分 (60% 语义相关性 + 40% 权威性)
-            # 使用 log1p 防止超高引用量的文章权重炸缸
             normalized_auth = min(1.0, math.log1p(auth_score) / 2.0)
             doc['combined_score'] = (semantic_score * 0.6) + (normalized_auth * 0.4)
             
         # 3. 终极重排 (根据混合得分降序)
         docs.sort(key=lambda x: x.get('combined_score', 0), reverse=True)
         
-        # 返回最精华的 Top K 交给审查员 Agent 阅读
         return docs[:n_results]
     
     def count(self) -> int: 
