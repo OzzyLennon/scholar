@@ -5,6 +5,9 @@
 # LLM SDK
 openai>=1.0.0
 
+# Web 前端
+streamlit>=1.32.0
+
 # 环境变量管理
 python-dotenv>=1.0.0
 
