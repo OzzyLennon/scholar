@@ -1,12 +1,10 @@
-# ==========================================
-# Agent 模块 - 5-Agent 核心架构
-# ==========================================
 from .core import (
     LeadAuthorAgent,
     SearcherAgent, 
     ExtractorAgent,
     ReviewerAgent,
-    DataResearcherAgent
+    DataCrawlerAgent,     # 新增
+    DataAnalystAgent      # 新增
 )
 
 __all__ = [
@@ -14,5 +12,6 @@ __all__ = [
     "SearcherAgent",
     "ExtractorAgent", 
     "ReviewerAgent",
-    "DataResearcherAgent"
+    "DataCrawlerAgent",
+    "DataAnalystAgent"
 ]

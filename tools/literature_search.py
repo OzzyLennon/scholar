@@ -5,9 +5,11 @@ import json
 import os
 import time
 import requests
+import math
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
+
 
 @dataclass
 class Paper:
@@ -21,6 +23,24 @@ class Paper:
     pdf_url: Optional[str] = None
     venue: str = ""
     source: str = "semantic_scholar"
+    authority_score: float = 0.0  # 🌟 新增：权威性得分
+    
+    def __post_init__(self):
+        """🌟 核心升级：自动计算文献权威性权重"""
+        current_year = datetime.now().year
+        safe_year = self.year if self.year else current_year
+        age = max(1, current_year - safe_year + 1)
+        safe_citations = self.citations if self.citations else 0
+        
+        # 引用加速度 (对数平滑)
+        citation_velocity = safe_citations / age
+        score = 1.0 + math.log10(citation_velocity + 1)
+        
+        # 前沿研究加成 (近2年乘1.5倍)
+        if age <= 2:
+            score *= 1.5
+            
+        self.authority_score = round(score, 2)
     
     def to_dict(self) -> Dict:
         abstract = self.abstract or ""
@@ -32,7 +52,8 @@ class Paper:
             "doi": self.doi or "",
             "citations": self.citations or 0,
             "venue": self.venue or "",
-            "source": self.source
+            "source": self.source,
+            "authority_score": self.authority_score  # 🌟 记得在字典里暴露出这个分数
         }
     
     @classmethod
@@ -40,7 +61,7 @@ class Paper:
         """从 Semantic Scholar API 响应创建 Paper"""
         return cls(
             title=data.get("title", ""),
-            authors=[a.get("name", "") for a in data.get("authors", [])[:3]],  # 取前3作者
+            authors=[a.get("name", "") for a in data.get("authors", [])[:3]],
             year=data.get("year", datetime.now().year),
             abstract=data.get("abstract", ""),
             doi=data.get("externalIds", {}).get("DOI", data.get("paperId", "")),
@@ -226,9 +247,7 @@ class LiteratureSearchManager:
         self.core_api = CoreAPI(core_api_key) if use_core else None
     
     def search(self, queries: List[str], max_results: int = 20) -> List[Paper]:
-        """
-        多源检索
-        """
+        """多源检索"""
         all_papers = []
         
         # 优先使用 Semantic Scholar
@@ -246,13 +265,14 @@ class LiteratureSearchManager:
                 all_papers.extend(papers)
             print(f"  ✓ 补充 {len(all_papers)} 篇")
         
-        # 去重并排序（按引用量）
+        # 🌟 升级：去重时，如果遇到同名/同DOI文献，保留权威分更高的那个
         seen = {}
         for p in all_papers:
-            if p.doi not in seen or p.citations > seen[p.doi].citations:
+            if p.doi not in seen or p.authority_score > seen[p.doi].authority_score:
                 seen[p.doi] = p
         
         unique_papers = list(seen.values())
-        unique_papers.sort(key=lambda x: x.citations, reverse=True)
+        # 🌟 升级：按照我们算出的权威分 (authority_score) 降序排列，不再单纯按总引用量！
+        unique_papers.sort(key=lambda x: x.authority_score, reverse=True)
         
         return unique_papers[:max_results]

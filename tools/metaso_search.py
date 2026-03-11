@@ -5,8 +5,10 @@ import json
 import os
 import requests
 import time
+import math
 from typing import List, Dict, Optional
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -20,6 +22,26 @@ class ChinesePaper:
     url: str
     source: str  # 来源：秘塔
     citation_count: int = 0
+    authority_score: float = 0.0  # 🌟 新增：权威分
+    
+    def __post_init__(self):
+        """🌟 核心升级：计算中文文献的权威分"""
+        current_year = datetime.now().year
+        safe_year = self.year if self.year else current_year
+        age = max(1, current_year - safe_year + 1)
+        safe_citations = self.citation_count if self.citation_count else 0
+        
+        citation_velocity = safe_citations / age
+        score = 1.0 + math.log10(citation_velocity + 1)
+        
+        if age <= 2:
+            score *= 1.5  # 前沿研究加成
+            
+        # 中文特色加成：如果是知网或万方等核心来源，给予权重提升
+        if self.venue and any(v in self.venue for v in ["知网", "核心", "万方"]):
+            score *= 1.2
+            
+        self.authority_score = round(score, 2)
     
     def to_dict(self) -> Dict:
         return {
@@ -30,8 +52,9 @@ class ChinesePaper:
             "venue": self.venue,
             "url": self.url,
             "source": self.source,
-            "citation_count": self.citation_count,
-            "doi": None  # 中文文献通常没有DOI
+            "citations": self.citation_count, # 统一叫 citations 以兼容主控
+            "doi": None,
+            "authority_score": self.authority_score # 🌟 暴露出分数
         }
 
 

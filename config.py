@@ -1,12 +1,12 @@
 # ==========================================
-# 配置管理 - 支持多LLM
+# 配置管理 - 支持多LLM (大满贯完全体版)
+# 保留了全平台接口，同时支持 6-Agent 动态路由
 # ==========================================
 import os
 from dataclasses import dataclass
 from typing import Dict, Optional
 from dotenv import load_dotenv
 
-# 加载 .env 文件
 load_dotenv()
 
 @dataclass
@@ -15,50 +15,37 @@ class LLMConfig:
     api_key: str
     base_url: str
     model: str
-    
     def is_available(self) -> bool:
         return bool(self.api_key)
-
 
 @dataclass
 class Config:
     """项目配置"""
     
-    # ===== 主LLM配置（兼容旧版）=====
+    # ===== LLM API Keys (全平台火力保留) =====
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     MODEL_NAME: str = os.getenv("MODEL_NAME", "gpt-4o")
     
-    # DeepSeek（从 signal_config.yaml 发现）
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    
-    # ===== 多LLM配置（不同Agent用不同模型）=====
-    
-    # DeepSeek (主配置)
     DEEPSEEK_KEY: str = os.getenv("DEEPSEEK_KEY", "")
-    DEEPSEEK_URL: str = "https://api.deepseek.com/v1"
+    DEEPSEEK_URL: str = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/v1")
     
-    # SiliconFlow (DeepSeek V3.2)
     SILICONFLOW_KEY: str = os.getenv("SILICONFLOW_KEY", "")
-    SILICONFLOW_URL: str = "https://api.siliconflow.cn/v1"
+    SILICONFLOW_URL: str = os.getenv("SILICONFLOW_URL", "https://api.siliconflow.cn/v1")
     
-    # ARK (豆包/火山引擎)
     ARK_KEY: str = os.getenv("ARK_KEY", "")
-    ARK_URL: str = "https://ark.cn-beijing.volces.com/api/coding"
+    ARK_URL: str = os.getenv("ARK_URL", "https://ark.cn-beijing.volces.com/api/coding")
     
-    # Tencent Coding
     TENCENT_KEY: str = os.getenv("TENCENT_KEY", "")
-    TENCENT_URL: str = "https://api.lkeap.cloud.tencent.com/coding/v3"
+    TENCENT_URL: str = os.getenv("TENCENT_URL", "https://api.lkeap.cloud.tencent.com/coding/v3")
     
-    # ===== 学术搜索配置 =====
+    # ===== 学术搜索与工具配置 =====
     SEMANTIC_SCHOLAR_API_KEY: str = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
     CORE_API_KEY: str = os.getenv("CORE_API_KEY", "")
-    
-    # ===== 秘塔MCP配置（中文文献） =====
     METASO_API_KEY: str = os.getenv("METASO_API_KEY", "")
     
-    # ===== 输出配置 =====
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
     VECTOR_DB_DIR: str = os.getenv("VECTOR_DB_DIR", "./vector_db")
     
@@ -66,126 +53,103 @@ class Config:
     if OUTPUT_DIR == "./output/output":
         OUTPUT_DIR = "./output"
     
-    # ===== 搜索配置 =====
     MAX_SEARCH_RESULTS: int = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
+    SANDBOX_TIMEOUT: int = int(os.getenv("SANDBOX_TIMEOUT", "120"))
     
-    # ===== Agent LLM分配配置 =====
-    # 不同Agent可以配置不同的LLM
-    AGENT_LLMS: Dict[str, str] = None
+    AGENT_LLMS: Dict[str, dict] = None
     
     def __post_init__(self):
-        # Agent-LLM 映射配置（从环境变量读取）
+        # 🌟 6-Agent 动态路由分配表 (从环境变量读取，完美保留你的原版设计)
         self.AGENT_LLMS = {
-            # 主控(LeadAuthor)：规划+决策
             "lead_author": {
                 "provider": os.getenv("AGENT_LEAD_AUTHOR_PROVIDER", "deepseek"),
                 "model": os.getenv("AGENT_LEAD_AUTHOR_MODEL", "deepseek-reasoner"),
                 "temperature": float(os.getenv("AGENT_LEAD_AUTHOR_TEMP", "0.7"))
             },
-            # 审查员(Reviewer)：文献综述+Gap分析
             "reviewer": {
-                "provider": os.getenv("AGENT_REVIEWER_PROVIDER", "deepseek"),
-                "model": os.getenv("AGENT_REVIEWER_MODEL", "deepseek-reasoner"),
+                "provider": os.getenv("AGENT_REVIEWER_PROVIDER", "siliconflow"),
+                "model": os.getenv("AGENT_REVIEWER_MODEL", "Pro/moonshotai/Kimi-K2.5"),
                 "temperature": float(os.getenv("AGENT_REVIEWER_TEMP", "0.5"))
             },
-            # 数据研究员(DataResearcher)：代码生成
-            "data_researcher": {
-                "provider": os.getenv("AGENT_DATA_PROVIDER", "tencent"),
-                "model": os.getenv("AGENT_DATA_MODEL", "doubao-seed-2.0-code"),
-                "temperature": float(os.getenv("AGENT_DATA_TEMP", "0.3"))
+            "data_crawler": {
+                "provider": os.getenv("AGENT_CRAWLER_PROVIDER", "siliconflow"),
+                "model": os.getenv("AGENT_CRAWLER_MODEL", "deepseek-ai/DeepSeek-V3.2"),
+                "temperature": float(os.getenv("AGENT_CRAWLER_TEMP", "0.1"))
+            },
+            "data_analyst": {
+                "provider": os.getenv("AGENT_ANALYST_PROVIDER", "siliconflow"),
+                "model": os.getenv("AGENT_ANALYST_MODEL", "deepseek-ai/DeepSeek-V3.2"),
+                "temperature": float(os.getenv("AGENT_ANALYST_TEMP", "0.1"))
             }
         }
     
-    # ===== 沙箱配置 =====
-    SANDBOX_TIMEOUT: int = int(os.getenv("SANDBOX_TIMEOUT", "120"))
-    
-    # ===== 便捷方法 =====
     def use_llm(self) -> bool:
-        """检查是否配置了任意 LLM"""
+        """检查是否有任意平台的 API Key 存活"""
         return bool(self.OPENAI_API_KEY or self.DEEPSEEK_API_KEY or 
                    self.DEEPSEEK_KEY or self.SILICONFLOW_KEY or 
                    self.ARK_KEY or self.TENCENT_KEY)
     
-    def get_llm_config(self, provider: str = None) -> Optional[LLMConfig]:
-        """获取指定Provider的LLM配置"""
+    def get_llm_config(self, provider: str = None, target_model: str = None) -> Optional[LLMConfig]:
+        """大满贯装配车间：支持市面上几乎所有主流平台的动态装配"""
         configs = {
             "openai": LLMConfig(
-                api_key=self.OPENAI_API_KEY,
-                base_url=self.OPENAI_BASE_URL,
-                model=self.MODEL_NAME
+                api_key=self.OPENAI_API_KEY, 
+                base_url=self.OPENAI_BASE_URL, 
+                model=target_model or self.MODEL_NAME
             ),
             "deepseek": LLMConfig(
-                api_key=self.DEEPSEEK_KEY or self.DEEPSEEK_API_KEY,
-                base_url=self.DEEPSEEK_URL,
-                model="deepseek-chat"
+                api_key=self.DEEPSEEK_KEY or self.DEEPSEEK_API_KEY, 
+                base_url=self.DEEPSEEK_BASE_URL or self.DEEPSEEK_URL, 
+                model=target_model or "deepseek-chat"
             ),
             "deepseek-reasoner": LLMConfig(
-                api_key=self.DEEPSEEK_KEY or self.DEEPSEEK_API_KEY,
-                base_url=self.DEEPSEEK_URL,
-                model="deepseek-reasoner"
+                api_key=self.DEEPSEEK_KEY or self.DEEPSEEK_API_KEY, 
+                base_url=self.DEEPSEEK_BASE_URL or self.DEEPSEEK_URL, 
+                model=target_model or "deepseek-reasoner"
             ),
             "siliconflow": LLMConfig(
-                api_key=self.SILICONFLOW_KEY,
-                base_url=self.SILICONFLOW_URL,
-                model="deepseek-ai/DeepSeek-V3.2"
+                api_key=self.SILICONFLOW_KEY, 
+                base_url=self.SILICONFLOW_URL, 
+                model=target_model or "deepseek-ai/DeepSeek-V3.2"
             ),
             "ark": LLMConfig(
-                api_key=self.ARK_KEY,
-                base_url=self.ARK_URL,
-                model="doubao-seed-2.0-code"
+                api_key=self.ARK_KEY, 
+                base_url=self.ARK_URL, 
+                model=target_model or "doubao-seed-2.0-code"
             ),
             "tencent": LLMConfig(
-                api_key=self.TENCENT_KEY,
-                base_url=self.TENCENT_URL,
-                model="doubao-seed-2.0-code"
+                api_key=self.TENCENT_KEY, 
+                base_url=self.TENCENT_URL, 
+                model=target_model or "doubao-seed-2.0-code"
             ),
+            # 保留你原版中定义的其它特定平台预设
             "kimi": LLMConfig(
-                api_key=self.ARK_KEY,
-                base_url=self.ARK_URL,
-                model="kimi-k2.5"
+                api_key=self.ARK_KEY, 
+                base_url=self.ARK_URL, 
+                model=target_model or "kimi-k2.5"
             ),
             "glm": LLMConfig(
-                api_key=self.ARK_KEY,
-                base_url=self.ARK_URL,
-                model="glm-4.7"
+                api_key=self.ARK_KEY, 
+                base_url=self.ARK_URL, 
+                model=target_model or "glm-4.7"
             )
         }
-        
-        if provider and provider in configs:
-            return configs[provider]
-        
-        # 默认返回 DeepSeek
-        return configs.get("deepseek")
+        return configs.get(provider, configs.get("deepseek"))
     
     def get_agent_llm(self, agent_name: str) -> Optional[LLMConfig]:
-        """获取指定Agent应该使用的LLM配置"""
+        """为具体的 Agent 提供动态模型分发"""
         if agent_name not in self.AGENT_LLMS:
             return self.get_llm_config("deepseek")
-        
+            
         agent_config = self.AGENT_LLMS[agent_name]
         provider = agent_config.get("provider", "deepseek")
-        
-        # 特殊处理模型名
         model = agent_config.get("model", "deepseek-chat")
         
-        # 根据provider返回对应配置
-        configs = {
-            "deepseek": self.get_llm_config("deepseek-reasoner") if "reasoner" in model else self.get_llm_config("deepseek"),
-            "siliconflow": self.get_llm_config("siliconflow"),
-            "ark": LLMConfig(
-                api_key=self.ARK_KEY,
-                base_url=self.ARK_URL,
-                model=model
-            ),
-            "tencent": LLMConfig(
-                api_key=self.TENCENT_KEY,
-                base_url=self.TENCENT_URL,
-                model=model
-            )
-        }
-        
-        return configs.get(provider, self.get_llm_config("deepseek"))
+        # 兼容深思官方 R1 模型的特殊判断逻辑
+        if provider == "deepseek" and "reasoner" in model:
+            return self.get_llm_config(provider="deepseek-reasoner", target_model=model)
+            
+        # 将环境变量中的 provider 和 model 精准传递给底层装配厂
+        return self.get_llm_config(provider=provider, target_model=model)
 
-
-# 创建全局配置实例
 config = Config()
