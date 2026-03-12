@@ -1,0 +1,5 @@
+- [x] `debug_search.py` runs and provides diagnostic output.
+- [x] Root cause of search failure is identified (missing `sandbox.py` breaking `tools` import).
+- [x] `tools/__init__.py` is patched to handle missing `sandbox.py`.
+- [x] `agents/core.py` logs import errors.
+- [x] `SearcherAgent` returns real results when keys are present.

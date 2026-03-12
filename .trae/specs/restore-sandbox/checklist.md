@@ -1,0 +1,4 @@
+- [x] `tools/sandbox.py` exists.
+- [x] `PythonSandbox` can execute code and capture stdout.
+- [x] `PythonSandbox` correctly handles `save_figure` and saves images to `output/`.
+- [x] `DataAnalystAgent` (simulated via test script) can generate charts.

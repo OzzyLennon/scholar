@@ -118,6 +118,14 @@ class ConfigManager:
             model=route["model"],
             temperature=route["temp"]
         )
+    
+    def use_llm(self) -> bool:
+        """检查资源池中是否有任意一家的 API Key 存活"""
+        # 遍历所有的服务商，只要有一个配了 Key，就放行
+        for provider_name, provider_info in self.providers.items():
+            if provider_info.get("key"):
+                return True
+        return False
 
 # 实例化全局单例
 config = ConfigManager()

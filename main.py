@@ -1,6 +1,7 @@
 # ==========================================
 # Scholar - 6-Agent 学术工作流引擎 (究极完全体)
 # ==========================================
+import sys
 from workflow import SixAgentWorkflow
 from config import config
 
@@ -29,8 +30,8 @@ def main():
     # 实例化工作流
     workflow = SixAgentWorkflow()
     
-    # 🌟 测试你的爬虫+分析双链能力
-    test_idea = """
+    # 🌟 默认测试课题
+    default_idea = """
     基于大语言模型（LLM）情感分析与另类数据的金融市场量化交易策略实证研究。
     具体要求：
     1. 梳理近三年关于"非结构化另类数据（Alternative Data，如社交媒体、新闻情绪）在量化预测中应用"的顶级金融或计算机文献。
@@ -39,8 +40,30 @@ def main():
     4. 字数与排版：最终的 Markdown 论文不少于 3000 字，必须将实证数据结果与第二章的理论完美融合，并在文末列出真实的参考文献。
     """
     
-    print(f"\n🚀 启动研究课题: {test_idea.strip()}")
-    project = workflow.run(test_idea)
+    # --- 交互式输入逻辑 ---
+    print("\n" + "="*75)
+    print("💡 请输入您的研究课题 (直接回车将使用默认课题)")
+    print("="*75)
+
+    if len(sys.argv) > 1:
+        # 优先使用命令行参数
+        idea = sys.argv[1]
+        print(f"检测到命令行参数，使用课题: {idea}")
+    else:
+        # 否则尝试交互式输入
+        try:
+            user_input = input("请输入课题 > ").strip()
+            if user_input:
+                idea = user_input
+            else:
+                idea = default_idea
+                print("使用默认课题...")
+        except KeyboardInterrupt:
+            print("\n用户取消操作。")
+            return
+
+    print(f"\n🚀 启动研究课题: {idea.strip()}")
+    project = workflow.run(idea)
     
     # --- 恢复你的精美执行报表 ---
     print("\n" + "="*75)

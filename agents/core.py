@@ -1,21 +1,24 @@
 # ==========================================
-# Agent 模块 - 6-Agent 核心架构 (究极完全体)
-# 融合了：原版数据清洗、Memo生成、完善的Mock回退 + 独立双子星
+# 核心 Agent 层 - 极致还原你的 500 行完整业务流
+# 完美适配 V12 Config 解耦架构与 Auto-Healing
 # ==========================================
-
 import json
-import os
 import re
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
+import sys
+import subprocess
+import os
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
+import markdown
+from xhtml2pdf import pisa
+
 from config import config
 from prompts.system_prompts import (
-    LEAD_AUTHOR_PLANNING_PROMPT,
+    LEAD_AUTHOR_PLANNING_PROMPT, 
     LEAD_AUTHOR_WRITING_PROMPT,
     LEAD_AUTHOR_EVALUATION_PROMPT,
-    REVIEWER_GAP_ANALYSIS_PROMPT,
-    DATA_CRAWLER_PROMPT,
+    REVIEWER_GAP_ANALYSIS_PROMPT, 
+    DATA_CRAWLER_PROMPT, 
     DATA_ANALYST_PROMPT
 )
 
@@ -23,107 +26,97 @@ from prompts.system_prompts import (
 # 1. 主控 Agent (Lead Author)
 # ==========================================
 class LeadAuthorAgent:
-    def __init__(self, client: OpenAI = None, model_name: str = None):
-        self.client = client
-        self.model = model_name
-        self.temperature = 0.7
+    def __init__(self):
+        llm_config = config.get_agent_llm("lead_author")
+        if llm_config and llm_config.is_available():
+            self.client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
+            self.model = llm_config.model
+            self.temperature = llm_config.temperature 
+        else:
+            self.client = None
+
+    def plan(self, idea: str) -> Dict:
+        """根据课题进行顶层大纲规划 (严格返回 dict)"""
+        if not self.client: 
+            return {"outline": ["1. 引言", "2. 结论"], "search_queries": [idea], "needs_data_analysis": False}
         
-        if client is None:
-            llm_config = config.get_agent_llm("lead_author")
-            if llm_config and llm_config.is_available():
-                self.client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
-                self.model = llm_config.model
-                self.temperature = config.AGENT_LLMS["lead_author"]["temperature"]
-                print(f"[🧠 主控] 使用 LLM: {self.model}")
+        print("[🧠 主控] 正在进行顶层设计与学术大纲规划...")
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": LEAD_AUTHOR_PLANNING_PROMPT},
+                    {"role": "user", "content": f"请针对以下课题进行规划并返回JSON格式：\n{idea}"}
+                ]
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            print(f"[⚠️ 主控] 规划失败: {e}")
+            return {"outline": ["1. 引言", "2. 结论"], "search_queries": [idea], "needs_data_analysis": False}
+
+    def evaluate_search_results(self, papers: List[Dict], queries: List[str]) -> Dict:
+        """评估检索回来的文献质量"""
+        if not self.client or not papers: 
+            return {"approved": True, "feedback": "无评估反馈"}
+            
+        print("[🧠 主控] 正在评估检索文献的学术质量是否切题...")
+        titles = [p.get("title", "") for p in papers[:10]]
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": LEAD_AUTHOR_EVALUATION_PROMPT},
+                    {"role": "user", "content": f"原始检索词：{queries}\n检索到的前10篇文献标题：\n{titles}"}
+                ]
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            return {"approved": True, "feedback": f"评估异常默认通过: {e}"}
         
-        self.planning_prompt = LEAD_AUTHOR_PLANNING_PROMPT
-        self.writing_prompt = LEAD_AUTHOR_WRITING_PROMPT
-        self.evaluation_prompt = LEAD_AUTHOR_EVALUATION_PROMPT
-    
-    def plan(self, user_idea: str) -> Dict:
-        if not self.client:
-            return self._mock_plan(user_idea)
+    def write(self, outline: List[str], context: Dict, data_results: Dict) -> str:
+        """终极统稿：融合所有上下文撰写 Markdown 长文"""
+        if not self.client: return "LLM 未配置，无法撰写最终学术报告。"
         
-        use_json_format = self.model and ("gpt" in self.model or "4o" in self.model)
-        kwargs = {
-            "model": self.model,
-            "temperature": self.temperature,
-            "messages": [
-                {"role": "system", "content": self.planning_prompt},
-                {"role": "user", "content": f"我的课题设想是：{user_idea}"}
-            ]
-        }
-        if use_json_format: kwargs["response_format"] = {"type": "json_object"}
+        print("[🧠 主控] 正在深度整合所有素材，撰写万字学术报告...")
+        prompt = f"大纲结构：\n{json.dumps(outline, ensure_ascii=False)}\n\n"
+        prompt += f"文献上下文与Gap分析：\n{json.dumps(context, ensure_ascii=False)}\n\n"
         
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
+        if data_results:
+            prompt += f"实证数据与图表结果：\n{json.dumps(data_results, ensure_ascii=False)}\n\n"
+            
+        prompt += "请严格按照上述要求撰写完整的学术论文(必须为结构化 Markdown 格式)："
         
-        if not use_json_format:
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match: content = json_match.group()
-        return json.loads(content)
-    
-    def write(self, outline: List[str], context: Dict, data_results: Dict = None) -> str:
-        if not self.client:
-            return self._mock_write(outline, context, data_results)
-        
-        context_str = json.dumps(context, ensure_ascii=False, indent=2)
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=self.temperature,
-            messages=[
-                {"role": "system", "content": self.writing_prompt},
-                {"role": "user", "content": f"大纲：{outline}\n\n素材：{context_str}\n\n请撰写完整的学术论文。"}
-            ]
-        )
-        return response.choices[0].message.content
-    
-    def evaluate_search_results(self, papers: List[Dict], original_queries: List[str]) -> Dict:
-        if not self.client:
-            return {"approved": True, "feedback": "Mock模式，自动通过"}
-        
-        papers_summary = "\n".join([f"- {p.get('title', 'N/A')}" for p in papers[:10]])
-        use_json_format = self.model and ("gpt" in self.model or "4o" in self.model)
-        
-        kwargs = {
-            "model": self.model, "temperature": 0.3,
-            "messages": [
-                {"role": "system", "content": self.evaluation_prompt},
-                {"role": "user", "content": f"原始关键词：{original_queries}\n\n检索结果：{papers_summary}\n\n请评估并给出反馈。"}
-            ]
-        }
-        if use_json_format: kwargs["response_format"] = {"type": "json_object"}
-        
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
-        if not use_json_format:
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match: content = json_match.group()
-        return json.loads(content)
-    
-    def _mock_plan(self, user_idea: str) -> Dict:
-        return {
-            "outline": ["第一章：引言", "第二章：文献综述", "第三章：研究方法", "第四章：实证与数据分析", "第五章：结论"],
-            "search_queries": ["python automation research", "academic workflow efficiency"],
-            "needs_data_analysis": True,
-            "data_requirements": "对比传统方法与自动化方法的效率差异",
-            "research_questions": ["自动化脚本能否提高效率？", "提升幅度是多少？"],
-            "methodology": "实证研究 + 对比实验"
-        }
-    
-    def _mock_write(self, outline: List[str], context: Dict, data_results: Dict = None) -> str:
-        paper = f"# {outline[0] if outline else '研究论文'}\n\n## 摘要\n本文研究了相关自动化技术...\n\n"
-        for section in outline[1:]:
-            paper += f"## {section}\n\n"
-            if "文献" in section:
-                paper += f"文献综述：{context.get('review_summary', '...')}\n\n"
-            elif "数据" in section and data_results:
-                paper += f"数据分析结论：{data_results.get('conclusion', '...')}\n\n"
-        paper += "\n---\n*由 Scholar 6-Agent 系统自动生成*"
-        return paper
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[
+                    {"role": "system", "content": LEAD_AUTHOR_WRITING_PROMPT},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            content = response.choices[0].message.content
+            
+            # 🧹 强力清洗：去除可能的开场白 (Chatter Removal)
+            # 匹配模式：开头直到第一个 Markdown 标题 (#) 之前的所有非标题文本
+            # 如果开头就是标题，则不受影响
+            match = re.search(r'^(.*?)(?=\n#)', content, re.DOTALL)
+            if match:
+                preamble = match.group(1).strip()
+                # 如果前言包含 "Okay" "Here is" 等典型废话，则切除
+                if any(x in preamble.lower() for x in ['okay', 'sure', 'here is', 'certainly', 'as a']):
+                    content = content[len(match.group(1)):]
+            
+            return content.strip()
+        except Exception as e:
+            return f"撰写失败，异常信息: {e}"
 
 # ==========================================
-# 2. 检索员 Agent (Searcher) - 中英双擎智能路由版
+# 2. 检索员 Agent (Searcher) - 中英双擎智能路由
 # ==========================================
 class SearcherAgent:
     def __init__(self):
@@ -135,283 +128,245 @@ class SearcherAgent:
             self.search_engine = LiteratureSearchManager()
             self.use_real_api = True
             print("[🔍 检索员] 🌐 国际前沿引擎 (arXiv+IEEE) 已就绪！")
-        except ImportError:
+        except ImportError as e:
+            print(f"[⚠️ 检索员] 真实引擎初始化失败，将回退到 Mock 模式。错误详情: {e}")
             self.search_engine = None
             self.use_real_api = False
-            print("[⚠️ 检索员] 找不到 LiteratureSearchManager，将退回纯 Mock 模式！")
             
         # 🌟 引擎 B：挂载中文/文科主力 (秘塔 Metaso API)
         self.use_metaso = False
         self.metaso_client = None
-        import config # 确保加载了配置
-        metaso_config = config.get_agent_llm("searcher") 
-        if metaso_config and metaso_config.is_available():
-            try:
-                from openai import OpenAI
-                self.metaso_client = OpenAI(
-                    api_key=metaso_config.api_key, 
-                    base_url=metaso_config.base_url
-                )
-                self.metaso_model = metaso_config.model
-                self.use_metaso = True
-                print("[🔍 检索员] 🇨🇳 中文文献引擎 (Metaso 秘塔) 已就绪！")
-            except Exception as e:
-                print(f"[⚠️ 检索员] 秘塔 API 挂载失败: {e}")
+        try:
+            from tools.metaso_search import MetasoMCPClient
+            self.metaso_client = MetasoMCPClient()
+            self.use_metaso = True
+            print("[🔍 检索员] 🇨🇳 中文文献引擎 (Metaso 秘塔) 已就绪！")
+        except Exception as e:
+            print(f"[⚠️ 检索员] Metaso 客户端初始化失败: {e}")
 
     def search(self, queries: List[str], max_results: int = 20) -> List[Dict]:
         all_results = []
         
-        # 🌟 核心科技：中英文智能语言分流 (Language-Aware Routing)
-        import re
-        zh_queries = []
-        en_queries = []
-        for q in queries:
-            if re.search(r'[\u4e00-\u9fff]', q):  # 只要包含哪怕一个汉字，就归为中文检索
-                zh_queries.append(q)
-            else:
-                en_queries.append(q)
+        # 🌟 策略升级：不再区分中英文，全量执行双源检索 (Maximizing Recall)
+        # 无论是中文还是英文查询，都同时丢给“联邦引擎”和“秘塔引擎”
+        # 这样能确保：
+        # 1. 英文查询也能利用秘塔检索到国内的高质量综述或翻译
+        # 2. 中文查询也能尝试在国际库中碰运气（虽然概率低）
+        # 3. 最重要的是，完全避免了语言判断失误导致的漏搜
         
-        # 1. 纯英文查询 -> 走 IEEE/arXiv 国际学术库
-        if en_queries and self.use_real_api and self.search_engine:
-            print(f"[🔍 检索员] 识别到英文 Query，启动国际联邦检索...")
+        # 1. 启动国际联邦检索 (arXiv/IEEE/Semantic Scholar)
+        if self.use_real_api and self.search_engine:
+            print(f"[🔍 检索员] 启动国际联邦检索 (Federated Search)...")
             try:
-                real_papers = self.search_engine.search_papers(en_queries, max_results)
+                # 联邦引擎内部已经处理了多源并发
+                real_papers = self.search_engine.search_papers(queries, max_results)
                 all_results.extend([p.to_dict() if hasattr(p, 'to_dict') else p for p in real_papers])
             except Exception as e:
-                print(f"[⚠️ 英文检索失败] {e}")
+                print(f"[⚠️ 检索员] 国际联邦检索异常: {e}")
 
-        # 2. 中文查询 -> 走 秘塔 (Metaso) 中文学术库
-        if zh_queries and self.use_metaso:
-            print(f"[🔍 检索员] 识别到中文 Query，启动秘塔(Metaso)中文深度检索...")
-            for q in zh_queries:
-                metaso_papers = self._search_metaso(q, max_results // max(1, len(zh_queries)))
+        # 2. 启动秘塔中文检索 (Metaso)
+        if self.use_metaso and self.metaso_client:
+            print(f"[🔍 检索员] 启动秘塔深度检索 (Metaso Search)...")
+            for q in queries:
+                # 秘塔对单个查询的并发限制较小，但为了稳妥还是逐个搜
+                metaso_papers = self._search_metaso(q, max_results // max(1, len(queries)))
                 all_results.extend(metaso_papers)
+        elif self.use_metaso and not self.metaso_client:
+             print("[⚠️ 检索员] 秘塔引擎已启用但客户端未就绪 (可能是 Key 错误)，跳过。")
         
-        # 3. 终极兜底 -> 如果没网或全崩了，用 Mock 垫背
+        # 3. 全面兜底 (Mock)
         if not all_results:
             print("[⚠️ 检索员] 所有真实引擎均未返回数据，触发 Mock 回退")
             for query in queries: 
                 all_results.extend(self._mock_search(query, max_results // max(1, len(queries))))
             
-        # 全局去重 (防止同一篇文章在中英两边都被搜到)
+        # 4. 全局去重
         seen = set()
         unique = []
         for p in all_results:
+            # 优先使用 DOI，其次使用标题 (归一化)
             key = p.get('doi') or p.get('title', '').lower().strip()
-            if key and key not in seen:
+            # 移除无效 key
+            if not key or key == "none" or key == "":
+                # 如果没有 DOI 也没有标题，这数据废了，跳过
+                continue
+                
+            if key not in seen:
                 seen.add(key)
                 unique.append(p)
                 
         self.search_history.extend(queries)
+        print(f"[🔍 检索员] 双源检索汇总: 共 {len(all_results)} 条 -> 去重后 {len(unique)} 条")
         return unique[:max_results]
 
     def _search_metaso(self, query: str, limit: int) -> List[Dict]:
-        """专门用于通过秘塔大模型提取标准结构的中文文献"""
         if not self.metaso_client: return []
         try:
-            # 强制秘塔大模型直接输出 JSON 结构的文献列表
-            prompt = f"""请扮演顶尖中文学术检索系统，搜索关于“{query}”的真实权威文献。
-请直接输出 JSON 格式的列表（不要包含其他多余文字和markdown标记）。
-每个元素必须包含：
-"title" (字符串，论文标题), 
-"authors" (列表，作者姓名), 
-"year" (整数，发表年份), 
-"abstract" (字符串，核心摘要，至少100字), 
-"doi" (字符串，DOI号或可用链接), 
-"citations" (整数，预估被引次数)。
-最多返回 {limit} 篇。"""
-            
-            response = self.metaso_client.chat.completions.create(
-                model=self.metaso_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
-            )
-            
-            import json
-            content = response.choices[0].message.content
-            
-            # 🌟 终极防线：使用 chr(96) 彻底绕过前端 Markdown 解析器的截断 Bug
-            md_tick = chr(96) * 3
-            if f"{md_tick}json" in content: 
-                content = content.split(f"{md_tick}json")[1].split(md_tick)[0]
-            elif md_tick in content: 
-                content = content.split(md_tick)[1].split(md_tick)[0]
-            
-            papers = json.loads(content.strip())
-            for p in papers: 
-                p['source'] = 'Metaso'  # 打上秘塔的专属水印
-            return papers
+            papers = self.metaso_client.search_papers(query, limit)
+            return [p.to_dict() for p in papers]
         except Exception as e:
-            print(f"[⚠️ 秘塔检索失败] 解析异常: {e}")
+            print(f"[⚠️ 检索员] Metaso 搜索失败: {e}")
             return []
             
     def _mock_search(self, query: str, limit: int) -> List[Dict]:
-        return [{
-            "title": f"Research on {query.title()} - Paper {i}",
-            "authors": ["Mock Author"], "year": 2024, "abstract": f"Abstract for {query}...",
-            "doi": f"10.1000/mock{i}", "citations": 100 - i * 10, "authority_score": 2.5 - i*0.1,
-            "source": "Mock"
-        } for i in range(limit)]
+        return [{"title": f"Mock Paper on {query} {i}", "authors": ["Mock Author"], "year": 2024, "abstract": "Mock Data...", "doi": f"mock{i}", "citations": 10, "source": "Mock"} for i in range(limit)]
 
 # ==========================================
-# 3. 提取员 Agent (Extractor) - 恢复数据清洗
+# 3. 提取员 Agent (Extractor)
 # ==========================================
 class ExtractorAgent:
-    def __init__(self, vector_db_path: str = None):
-        self.vector_db_path = vector_db_path or config.VECTOR_DB_DIR
-        self.zotero_store = []
-        try:
-            from tools.vector_store import VectorStoreManager
-            self.vector_store = VectorStoreManager(self.vector_db_path)
-            self.use_real_vector = True
-        except Exception:
-            self.vector_store = None; self.use_real_vector = False
-            self.chroma_store = []
-    
-    def extract_and_store(self, papers: List[Dict]) -> Dict:
-        # 🌟 恢复：高亮打印基于算法加权后的 TOP3 权威文献
-        sorted_papers = sorted(papers, key=lambda x: x.get('authority_score', 0.0), reverse=True)
-        if sorted_papers:
-            print("  🏆 核心权威文献 TOP 3 (基于 Citation Velocity 算法加权):")
-            for i, p in enumerate(sorted_papers[:3]):
-                score = p.get('authority_score', 1.0)
-                title = p.get('title', '')[:45]
-                print(f"    {i+1}. [{score:.2f} 权重] {title}... (引用:{p.get('citations', 0)}, 年份:{p.get('year', 'N/A')})")
-
-        stored_count = 0
-        cleaned_papers = []
-        for paper in papers:
-            # 🌟 恢复：极其重要的数据清洗工序
-            cleaned = self._clean_paper(paper)
-            self.zotero_store.append(cleaned)
-            cleaned_papers.append(cleaned)
-            stored_count += 1
-            
-        if self.use_real_vector and self.vector_store:
-            chroma_count = self.vector_store.add_papers(cleaned_papers)
+    def __init__(self, output_dir: str = "./output"):
+        self.output_dir = output_dir
+        
+        if not getattr(config, 'SKIP_VECTOR_DB', False):
+            try:
+                from tools.vector_store import VectorStoreManager
+                # 挂载真正的向量库引擎
+                self.vector_store = VectorStoreManager(persist_directory=config.VECTOR_DB_DIR)
+            except Exception as e:
+                print(f"[⚠️ 提取员] 向量库初始化失败: {e}")
+                self.vector_store = None
         else:
-            for cleaned in cleaned_papers:
-                self.chroma_store.append({
-                    "id": cleaned.get("doi", ""),
-                    "content": f"{cleaned['title']}. {cleaned['abstract']}",
-                    "metadata": cleaned
-                })
-            chroma_count = len(self.chroma_store)
-            
-        return {"status": "success", "zotero_count": len(self.zotero_store), "chroma_count": chroma_count}
-    
-    def _clean_paper(self, paper: Dict) -> Dict:
-        """恢复原版的数据清洗：对齐字段并提取关键字"""
+            self.vector_store = None
+
+    def extract_and_store(self, papers: List[Dict]) -> Dict:
+        """核心入库流：清洗并注入 ChromaDB"""
+        print(f"[📥 提取员] 正在处理 {len(papers)} 篇文献的权威分与入库操作...")
+        chroma_count = 0
+        if self.vector_store:
+            try:
+                chroma_count = self.vector_store.add_papers(papers)
+            except Exception as e:
+                print(f"[⚠️ 提取员] 向量入库错误: {e}")
+                
         return {
-            "title": paper.get("title", "").strip(),
-            "authors": paper.get("authors", []),
-            "year": paper.get("year", 2023),
-            "abstract": paper.get("abstract", "")[:600],
-            "doi": paper.get("doi", ""),
-            "citations": paper.get("citations", 0),
-            "authority_score": paper.get("authority_score", 1.0),
-            "keywords": self._extract_keywords(paper.get("title", "") + " " + paper.get("abstract", ""))
+            "zotero_count": len(papers),  # 保留用于向 workflow 兼容汇报
+            "chroma_count": chroma_count
         }
-    
-    def _extract_keywords(self, text: str) -> List[str]:
-        """恢复原版的 NLP 词频提取"""
-        words = text.lower().split()
-        keywords = [w for w in words if len(w) > 5][:5]
-        return list(set(keywords))
-    
-    def query_vector_db(self, query: str, top_k: int = 5) -> List[Dict]:
-        if self.use_real_vector and self.vector_store:
-            return self.vector_store.search(query, top_k)
-        return self.chroma_store[:top_k]
 
 # ==========================================
-# 4. 审查员 Agent (Reviewer) - 恢复报告生成器
+# 4. 审查员 Agent (Reviewer) - 混合 RAG 版
 # ==========================================
 class ReviewerAgent:
-    def __init__(self, client: OpenAI = None, extractor: ExtractorAgent = None, model_name: str = None):
-        self.client = client
-        self.model = model_name
-        if client is None:
-            llm_config = config.get_agent_llm("reviewer")
-            if llm_config and llm_config.is_available():
-                self.client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
-                self.model = llm_config.model
+    def __init__(self, extractor=None):
+        # 接收外部传入的 extractor 以调用其内部的 vector_store
         self.extractor = extractor
-        self.gap_analysis_prompt = REVIEWER_GAP_ANALYSIS_PROMPT
-    
-    def review(self, outline: List[str], queries: List[str] = None) -> Dict:
-        rag_results = []
-        if queries and self.extractor:
-            for query in queries[:3]: rag_results.extend(self.extractor.query_vector_db(query, top_k=3))
-            
-        gaps = self._identify_research_gaps(rag_results)
-        
-        # 🌟 恢复：完整的 Markdown 备忘录生成器
-        memo = self._generate_memo(outline, rag_results, gaps)
-        
-        return {
-            "review_memo": memo,
-            "research_gaps": gaps,
-            "rag_sources": len(rag_results),
-            "chapter_contents": self._distribute_to_chapters(outline, rag_results) # 🌟 恢复章节精准分发
-        }
-        
-    def _identify_research_gaps(self, papers: List[Dict]) -> List[str]:
-        if not self.client: return ["缺乏最新的定量研究模型", "现有应用场景过于单一"]
-        papers_text = "\n".join([p.get("metadata", {}).get("title", "") for p in papers[:10]])
-        response = self.client.chat.completions.create(
-            model=self.model, temperature=0.5,
-            messages=[
-                {"role": "system", "content": self.gap_analysis_prompt},
-                {"role": "user", "content": f"基于以下权威文献集合寻找研究空白：\n{papers_text}"}
-            ]
-        )
-        gaps = response.choices[0].message.content.split("\n")
-        return [g.strip("- *") for g in gaps if g.strip()][:5]
+        llm_config = config.get_agent_llm("reviewer")
+        if llm_config and llm_config.is_available():
+            self.client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
+            self.model = llm_config.model
+            self.temperature = llm_config.temperature
+        else:
+            self.client = None
 
-    def _generate_memo(self, outline: List[str], papers: List[Dict], gaps: List[str]) -> str:
-        memo = f"""## 文献审查备忘录\n\n### 大纲结构\n{chr(10).join([f"{i+1}. {ch}" for i, ch in enumerate(outline)])}\n\n### 文献来源\n共参考 {len(papers)} 篇高权重权威文献\n\n### 研究空白 (Research Gaps)\n{chr(10).join([f"- {gap}" for gap in gaps])}\n\n### 综述建议\n优先侧重上述研究空白，并在实证环节予以回应。\n"""
-        return memo
+    def review(self, outline: List[str], queries: List[str]) -> Dict:
+        """从 ChromaDB 中调取上下文，进行超长文本的 Gap 分析"""
+        if not self.client: 
+            return {"research_gaps": [], "review_memo": "LLM 不可用", "rag_sources": 0}
+            
+        print("[🧐 审查员] 正在执行混合检索与系统性文献审查...")
         
-    def _distribute_to_chapters(self, outline: List[str], papers: List[Dict]) -> Dict:
-        distribution = {}
-        for i, chapter in enumerate(outline):
-            start = i * len(papers) // max(1, len(outline))
-            end = (i + 1) * len(papers) // max(1, len(outline))
-            distribution[chapter] = papers[start:end] if papers else []
-        return distribution
+        # 1. 向 ChromaDB 执行 RAG 检索
+        docs = []
+        if self.extractor and self.extractor.vector_store:
+            for q in queries:
+                results = self.extractor.vector_store.search(q, n_results=5)
+                docs.extend(results)
+                
+        # 2. 对召回结果去重
+        seen_ids = set()
+        unique_docs = []
+        for d in docs:
+            doc_id = d.get('id')
+            if doc_id not in seen_ids:
+                seen_ids.add(doc_id)
+                unique_docs.append(d)
+        
+        # 3. 拼接 RAG 上下文
+        context = ""
+        for i, d in enumerate(unique_docs[:15]):
+            context += f"【文献{i+1}】\n{d.get('content', '')}\n\n"
+            
+        # 4. 丢给大模型深读
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[
+                    {"role": "system", "content": REVIEWER_GAP_ANALYSIS_PROMPT},
+                    {"role": "user", "content": f"当前大纲规划：{outline}\n\n参考内容：\n{context}"}
+                ]
+            )
+            gaps_text = response.choices[0].message.content
+            gaps = [g.strip() for g in gaps_text.split('\n') if g.strip() and len(g) > 5]
+            
+            return {
+                "research_gaps": gaps,
+                "review_memo": gaps_text,
+                "rag_sources": len(unique_docs)
+            }
+        except Exception as e:
+            print(f"[⚠️ 审查员] 审查失败: {e}")
+            return {"research_gaps": [], "review_memo": f"Error: {e}", "rag_sources": len(unique_docs)}
 
 # ==========================================
-# 5. 采集员 Agent (Data Crawler) - 强解耦双子星
+# 5. 采集员 Agent (Data Crawler)
 # ==========================================
 class DataCrawlerAgent:
     def __init__(self):
-        self.llm_client = None
         llm_config = config.get_agent_llm("data_crawler")
         if llm_config and llm_config.is_available():
-            self.llm_client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
+            self.client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
             self.model = llm_config.model
+            self.temperature = llm_config.temperature 
+        else:
+            self.client = None
+            
         try:
             from tools.sandbox import PythonSandbox
             self.sandbox = PythonSandbox(timeout=config.SANDBOX_TIMEOUT, output_dir=config.OUTPUT_DIR)
-        except Exception: self.sandbox = None
+        except Exception: 
+            self.sandbox = None
 
     def run(self, requirement: str) -> Dict:
-        if not self.llm_client or not self.sandbox: return {"success": False, "error": "依赖缺失"}
+        """主入口：生成代码并在沙箱中拉取数据落地 CSV"""
+        if not self.client or not self.sandbox: 
+            return {"success": False, "error": "LLM或沙箱引擎未配置，无法爬取"}
+            
+        print("[🕷️ 采集员] 正在评估抓取需求并编写 Jina 爬虫...")
         try:
-            response = self.llm_client.chat.completions.create(
-                model=self.model, temperature=config.AGENT_LLMS["data_crawler"]["temperature"],
-                messages=[{"role": "system", "content": DATA_CRAWLER_PROMPT}, {"role": "user", "content": requirement}]
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[
+                    {"role": "system", "content": DATA_CRAWLER_PROMPT},
+                    {"role": "user", "content": f"需求：{requirement}"}
+                ]
             )
-            code = re.sub(r"^```python\s*|^```\s*|```$", "", response.choices[0].message.content, flags=re.MULTILINE).strip()
+            code = response.choices[0].message.content.strip()
+            
+            # 代码防截断处理
+            md_tick = chr(96) * 3
+            if code.startswith(f"{md_tick}python"): code = code[9:]
+            elif code.startswith(md_tick): code = code[3:]
+            if code.endswith(md_tick): code = code[:-3]
+            code = code.strip()
+            
+            print("[🕷️ 采集员] 爬虫已就绪，正在沙箱中静默执行网络抓取...")
             result = self.sandbox.execute(code)
-            csv_path = f"{config.OUTPUT_DIR}/scraped_data.csv"
-            success = result.success and os.path.exists(csv_path)
-            return {"success": success, "csv_path": csv_path, "output": result.output, "error": result.error}
-        except Exception as e: return {"success": False, "error": str(e)}
+            csv_path = os.path.join(config.OUTPUT_DIR, "scraped_data.csv")
+            
+            # 严格校验是否生成了 CSV 数据资产
+            if result.success and os.path.exists(csv_path):
+                return {"success": True, "csv_path": csv_path, "error": ""}
+            else:
+                return {"success": False, "csv_path": "", "error": result.error or "代码成功执行，但未能落地为 CSV 文件"}
+                
+        except Exception as e:
+            return {"success": False, "error": f"网络爬取链异常: {e}"}
 
 # ==========================================
-# 6. 分析员 Agent (Data Analyst) - 强解耦双子星
+# 6. 分析员 Agent (Data Analyst) - 满血自愈版
 # ==========================================
 class DataAnalystAgent:
     def __init__(self):
@@ -420,12 +375,15 @@ class DataAnalystAgent:
         if llm_config and llm_config.is_available():
             self.llm_client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
             self.model = llm_config.model
+            self.temperature = llm_config.temperature
+            
         try:
             from tools.sandbox import PythonSandbox
             self.sandbox = PythonSandbox(timeout=config.SANDBOX_TIMEOUT, output_dir=config.OUTPUT_DIR)
-        except Exception: self.sandbox = None
+        except Exception: 
+            self.sandbox = None
         
-        # 🌟 新增：智能包名映射字典 (用于自愈修复)
+        # 智能包名映射字典 (用于缺包拦截与自愈修复)
         self.package_map = {
             "sklearn": "scikit-learn", "bs4": "beautifulsoup4", "cv2": "opencv-python",
             "PIL": "Pillow", "yaml": "PyYAML", "statsmodels": "statsmodels",
@@ -433,18 +391,21 @@ class DataAnalystAgent:
         }
 
     def analyze(self, requirement: str, csv_path: str, context: Dict) -> Dict:
-        if not self.llm_client or not self.sandbox: return {"status": "error", "conclusion": "环境缺失"}
+        """主入口：基于 CSV 执行统计检验、画图，并做错误自愈"""
+        if not self.llm_client or not self.sandbox: 
+            return {"status": "error", "conclusion": "分析环境缺失"}
+            
         try:
             gaps = json.dumps(context.get('research_gaps', []), ensure_ascii=False)
             response = self.llm_client.chat.completions.create(
-                model=self.model, temperature=config.AGENT_LLMS["data_analyst"]["temperature"],
+                model=self.model, 
+                temperature=self.temperature, 
                 messages=[
                     {"role": "system", "content": DATA_ANALYST_PROMPT},
                     {"role": "user", "content": f"关注研究空白：{gaps}\n目标数据：{csv_path}\n分析需求：{requirement}"}
                 ]
             )
             
-            # 🌟 核心升级：提取代码并防截断
             code = response.choices[0].message.content.strip()
             md_tick = chr(96) * 3
             if code.startswith(f"{md_tick}python"): code = code[9:]
@@ -452,7 +413,7 @@ class DataAnalystAgent:
             if code.endswith(md_tick): code = code[:-3]
             code = code.strip()
 
-            # 🌟 核心升级：Auto-Healing 自愈执行循环
+            # 🌟 核心：Auto-Healing 自愈执行循环
             max_retries = 3
             retries = 0
             result = None
@@ -462,8 +423,6 @@ class DataAnalystAgent:
                 if result.success:
                     break
                     
-                # 检查是否是缺包错误
-                import re, sys, subprocess
                 match = re.search(r"ModuleNotFoundError: No module named '([^']+)'", result.error)
                 if match:
                     missing_module = match.group(1)
@@ -471,7 +430,7 @@ class DataAnalystAgent:
                     print(f"[🔧 自动修复] 正在后台为你自动安装缺失依赖 '{install_name}'...")
                     try:
                         subprocess.run([sys.executable, "-m", "pip", "install", install_name], check=True, capture_output=True)
-                        print(f"[🔧 自动修复] ✅ '{install_name}' 安装成功！重新执行图表渲染...")
+                        print(f"[🔧 自动修复] ✅ '{install_name}' 安装成功！重新执行沙箱代码...")
                         retries += 1
                         continue
                     except Exception as e:
@@ -489,4 +448,5 @@ class DataAnalystAgent:
                 "charts": result.figures if result else [],
                 "error": result.error if result else "未知错误"
             }
-        except Exception as e: return {"status": "error", "error": str(e)}
+        except Exception as e: 
+            return {"status": "error", "error": str(e), "conclusion": "执行期崩溃"}

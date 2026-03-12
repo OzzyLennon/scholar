@@ -18,7 +18,7 @@ def render_sidebar():
 
         try:
             from config import config
-            agent_llms = config.AGENT_LLMS or {}
+            agent_llms = config.agent_routes or {}
             rows = {
                 "🧠 主控":  agent_llms.get("lead_author", {}),
                 "📖 审查员": agent_llms.get("reviewer", {}),

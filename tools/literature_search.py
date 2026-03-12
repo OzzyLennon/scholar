@@ -89,7 +89,6 @@ class IEEEAPI:
         self.session = requests.Session()
         if self.api_key:
             self.session.headers.update({
-                "Authorization": f"Bearer {self.api_key}",
                 "Accept": "application/json"
             })
     
@@ -103,7 +102,8 @@ class IEEEAPI:
             params = {
                 "querytext": query,
                 "maxRecords": min(limit, 100),
-                "format": "json"
+                "format": "json",
+                "apikey": self.api_key
             }
             
             response = self.session.get(self.BASE_URL, params=params, timeout=30)
@@ -145,12 +145,36 @@ class ArxivSearcher:
         for query in queries:
             print(f"[📚 arXiv 源] 正在检索关键词: '{query}' ...")
             try:
-                search_query = urllib.parse.quote(f"all:{query}")
-                url = f"{self.base_url}search_query={search_query}&start=0&max_results={results_per_query}&sortBy=relevance&sortOrder=desc"
+                # 使用 requests 替代 urllib，更稳定
+                # Arxiv API 查询处理
+                # 如果包含空格且没有显式操作符，拆分为 AND 连接
+                # 示例：Deep Learning -> all:Deep AND all:Learning
                 
-                req = urllib.request.Request(url, headers={'User-Agent': 'Scholar-6-Agent/1.0'})
-                with urllib.request.urlopen(req, timeout=15) as response:
-                    xml_data = response.read()
+                clean_query = query.replace('"', '') # 移除可能导致错误的引号
+                
+                if ' ' in clean_query and 'AND' not in clean_query and 'OR' not in clean_query:
+                    # 将查询词拆分，每个词都加上 all: 前缀，并用 AND 连接
+                    terms = clean_query.split()
+                    search_query = " AND ".join([f"all:{term}" for term in terms])
+                else:
+                    # 单个词或已包含逻辑操作符，直接加上 all: 前缀
+                    search_query = f"all:{clean_query}"
+
+                params = {
+                    "search_query": search_query,
+                    "start": 0,
+                    "max_results": results_per_query,
+                    "sortBy": "relevance",
+                    "sortOrder": "desc"
+                }
+                
+                response = requests.get(
+                    self.base_url.rstrip('?'), 
+                    params=params, 
+                    timeout=15
+                )
+                response.raise_for_status()
+                xml_data = response.content
                 
                 root = ET.fromstring(xml_data)
                 ns = {'atom': 'http://www.w3.org/2005/Atom'}

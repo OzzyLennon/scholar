@@ -1,0 +1,3 @@
+- [x] Streamlit sidebar correctly displays Agent LLM routing info without errors.
+- [x] `main.py` prompts the user for input and uses the provided input for the workflow.
+- [x] `SearcherAgent` attempts to search using Arxiv/SS/IEEE even for Chinese queries if Metaso is unavailable (instead of returning 0 results and triggering Mock).

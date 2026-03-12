@@ -1,0 +1,4 @@
+- [x] `tools/__init__.py` exports `MetasoMCPClient`.
+- [x] `SearcherAgent` uses `MetasoMCPClient` for Chinese queries.
+- [x] `SearcherAgent` correctly converts `ChinesePaper` objects to dicts.
+- [x] System falls back gracefully if Metaso Key is missing.
