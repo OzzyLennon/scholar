@@ -141,7 +141,7 @@ def render_project_results(project):
         if paper:
             st.markdown(paper)
             st.markdown("---")
-            col_dl1, col_dl2 = st.columns(2)
+            col_dl1, col_dl2, col_dl3 = st.columns(3)
             with col_dl1:
                 st.download_button(
                     label="⬇️ 下载 Markdown 论文",
@@ -150,6 +150,19 @@ def render_project_results(project):
                     mime="text/markdown",
                 )
             with col_dl2:
+                # 检查 PDF 是否存在
+                pdf_path = f"output/{project.id}.pdf"
+                if os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ 下载 PDF 论文",
+                            data=f.read(),
+                            file_name=f"{project.id}.pdf",
+                            mime="application/pdf",
+                        )
+                else:
+                    st.button("⚠️ PDF 未生成", disabled=True)
+            with col_dl3:
                 log_json = json.dumps({
                     "id": project.id,
                     "idea": project.idea,

@@ -151,6 +151,7 @@ class SixAgentWorkflow:
                 # 5.2 分析员出动
                 project.log("📈 分析员接管：读取 CSV 进行数据科学绘图...")
                 csv_path = crawler_res.get('csv_path')
+                # 修复：传递正确的参数，确保 context 包含 'research_gaps'
                 project.data_results = self.data_analyst.analyze(data_req, csv_path, project.review)
                 
                 print(f"  核心洞察：{project.data_results.get('conclusion', '')}")
