@@ -123,60 +123,134 @@ class LeadAuthorAgent:
         return paper
 
 # ==========================================
-# 2. 检索员 Agent (Searcher)
+# 2. 检索员 Agent (Searcher) - 中英双擎智能路由版
 # ==========================================
 class SearcherAgent:
     def __init__(self):
         self.search_history = []
-        try:
-            from tools.literature_search import SemanticScholarAPI
-            self.search_api = SemanticScholarAPI()
-            self.use_real_api = True
-            print("[🔍 检索员] Semantic Scholar API 已激活")
-        except Exception:
-            self.search_api = None; self.use_real_api = False
         
-        self.metaso_client = None; self.use_metaso = False
+        # 🌟 引擎 A：挂载英文/理工科主力 (联邦引擎: arXiv + IEEE)
         try:
-            from tools.metaso_search import MetasoMCPClient
-            if config.METASO_API_KEY:
-                self.metaso_client = MetasoMCPClient(config.METASO_API_KEY)
+            from tools.literature_search import LiteratureSearchManager
+            self.search_engine = LiteratureSearchManager()
+            self.use_real_api = True
+            print("[🔍 检索员] 🌐 国际前沿引擎 (arXiv+IEEE) 已就绪！")
+        except ImportError:
+            self.search_engine = None
+            self.use_real_api = False
+            print("[⚠️ 检索员] 找不到 LiteratureSearchManager，将退回纯 Mock 模式！")
+            
+        # 🌟 引擎 B：挂载中文/文科主力 (秘塔 Metaso API)
+        self.use_metaso = False
+        self.metaso_client = None
+        import config # 确保加载了配置
+        metaso_config = config.get_agent_llm("searcher") 
+        if metaso_config and metaso_config.is_available():
+            try:
+                from openai import OpenAI
+                self.metaso_client = OpenAI(
+                    api_key=metaso_config.api_key, 
+                    base_url=metaso_config.base_url
+                )
+                self.metaso_model = metaso_config.model
                 self.use_metaso = True
-                print("[🔍 检索员] 秘塔MCP 已激活")
-        except Exception: pass
-    
+                print("[🔍 检索员] 🇨🇳 中文文献引擎 (Metaso 秘塔) 已就绪！")
+            except Exception as e:
+                print(f"[⚠️ 检索员] 秘塔 API 挂载失败: {e}")
+
     def search(self, queries: List[str], max_results: int = 20) -> List[Dict]:
         all_results = []
-        if self.use_real_api and self.search_api:
+        
+        # 🌟 核心科技：中英文智能语言分流 (Language-Aware Routing)
+        import re
+        zh_queries = []
+        en_queries = []
+        for q in queries:
+            if re.search(r'[\u4e00-\u9fff]', q):  # 只要包含哪怕一个汉字，就归为中文检索
+                zh_queries.append(q)
+            else:
+                en_queries.append(q)
+        
+        # 1. 纯英文查询 -> 走 IEEE/arXiv 国际学术库
+        if en_queries and self.use_real_api and self.search_engine:
+            print(f"[🔍 检索员] 识别到英文 Query，启动国际联邦检索...")
             try:
-                results = self.search_api.search_multiple(queries, max_results)
-                if results: all_results.extend([p.to_dict() for p in results])
-            except Exception as e: print(f"[⚠️ 检索员] SS检索失败: {e}")
-            
-        if self.use_metaso and self.metaso_client:
-            try:
-                chinese_results = self.metaso_client.search_multiple(queries, max_results // 3)
-                if chinese_results: all_results.extend([p.to_dict() for p in chinese_results])
-            except Exception as e: print(f"[⚠️ 检索员] 秘塔检索失败: {e}")
-            
+                real_papers = self.search_engine.search_papers(en_queries, max_results)
+                all_results.extend([p.to_dict() if hasattr(p, 'to_dict') else p for p in real_papers])
+            except Exception as e:
+                print(f"[⚠️ 英文检索失败] {e}")
+
+        # 2. 中文查询 -> 走 秘塔 (Metaso) 中文学术库
+        if zh_queries and self.use_metaso:
+            print(f"[🔍 检索员] 识别到中文 Query，启动秘塔(Metaso)中文深度检索...")
+            for q in zh_queries:
+                metaso_papers = self._search_metaso(q, max_results // max(1, len(zh_queries)))
+                all_results.extend(metaso_papers)
+        
+        # 3. 终极兜底 -> 如果没网或全崩了，用 Mock 垫背
         if not all_results:
-            print("[🔍 检索员] 触发 Mock 数据回退")
-            for query in queries: all_results.extend(self._mock_search(query, max_results // len(queries)))
+            print("[⚠️ 检索员] 所有真实引擎均未返回数据，触发 Mock 回退")
+            for query in queries: 
+                all_results.extend(self._mock_search(query, max_results // max(1, len(queries))))
             
-        seen = set(); unique = []
+        # 全局去重 (防止同一篇文章在中英两边都被搜到)
+        seen = set()
+        unique = []
         for p in all_results:
-            key = p.get('doi') or p.get('title', '')
+            key = p.get('doi') or p.get('title', '').lower().strip()
             if key and key not in seen:
-                seen.add(key); unique.append(p)
+                seen.add(key)
+                unique.append(p)
                 
         self.search_history.extend(queries)
-        return unique
+        return unique[:max_results]
 
+    def _search_metaso(self, query: str, limit: int) -> List[Dict]:
+        """专门用于通过秘塔大模型提取标准结构的中文文献"""
+        if not self.metaso_client: return []
+        try:
+            # 强制秘塔大模型直接输出 JSON 结构的文献列表
+            prompt = f"""请扮演顶尖中文学术检索系统，搜索关于“{query}”的真实权威文献。
+请直接输出 JSON 格式的列表（不要包含其他多余文字和markdown标记）。
+每个元素必须包含：
+"title" (字符串，论文标题), 
+"authors" (列表，作者姓名), 
+"year" (整数，发表年份), 
+"abstract" (字符串，核心摘要，至少100字), 
+"doi" (字符串，DOI号或可用链接), 
+"citations" (整数，预估被引次数)。
+最多返回 {limit} 篇。"""
+            
+            response = self.metaso_client.chat.completions.create(
+                model=self.metaso_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1
+            )
+            
+            import json
+            content = response.choices[0].message.content
+            
+            # 🌟 终极防线：使用 chr(96) 彻底绕过前端 Markdown 解析器的截断 Bug
+            md_tick = chr(96) * 3
+            if f"{md_tick}json" in content: 
+                content = content.split(f"{md_tick}json")[1].split(md_tick)[0]
+            elif md_tick in content: 
+                content = content.split(md_tick)[1].split(md_tick)[0]
+            
+            papers = json.loads(content.strip())
+            for p in papers: 
+                p['source'] = 'Metaso'  # 打上秘塔的专属水印
+            return papers
+        except Exception as e:
+            print(f"[⚠️ 秘塔检索失败] 解析异常: {e}")
+            return []
+            
     def _mock_search(self, query: str, limit: int) -> List[Dict]:
         return [{
             "title": f"Research on {query.title()} - Paper {i}",
             "authors": ["Mock Author"], "year": 2024, "abstract": f"Abstract for {query}...",
-            "doi": f"10.1000/mock{i}", "citations": 100 - i * 10, "authority_score": 2.5 - i*0.1
+            "doi": f"10.1000/mock{i}", "citations": 100 - i * 10, "authority_score": 2.5 - i*0.1,
+            "source": "Mock"
         } for i in range(limit)]
 
 # ==========================================
@@ -186,20 +260,13 @@ class ExtractorAgent:
     def __init__(self, vector_db_path: str = None):
         self.vector_db_path = vector_db_path or config.VECTOR_DB_DIR
         self.zotero_store = []
-        self.chroma_store = []  # 始终初始化，避免 else 分支 AttributeError
-        
-        # 如果配置跳过向量库，则强制使用Mock模式
-        if getattr(config, 'SKIP_VECTOR_DB', False):
-            self.vector_store = None
-            self.use_real_vector = False
-            print("[📦 提取员] SKIP_VECTOR_DB=true，使用Mock模式")
-        else:
-            try:
-                from tools.vector_store import VectorStoreManager
-                self.vector_store = VectorStoreManager(self.vector_db_path)
-                self.use_real_vector = True
-            except Exception:
-                self.vector_store = None; self.use_real_vector = False
+        try:
+            from tools.vector_store import VectorStoreManager
+            self.vector_store = VectorStoreManager(self.vector_db_path)
+            self.use_real_vector = True
+        except Exception:
+            self.vector_store = None; self.use_real_vector = False
+            self.chroma_store = []
     
     def extract_and_store(self, papers: List[Dict]) -> Dict:
         # 🌟 恢复：高亮打印基于算法加权后的 TOP3 权威文献
@@ -235,14 +302,9 @@ class ExtractorAgent:
     
     def _clean_paper(self, paper: Dict) -> Dict:
         """恢复原版的数据清洗：对齐字段并提取关键字"""
-        # ChromaDB不接受空列表作为metadata，需要处理
-        authors = paper.get("authors", [])
-        if isinstance(authors, list) and len(authors) == 0:
-            authors = "Unknown"
-        
         return {
             "title": paper.get("title", "").strip(),
-            "authors": authors,
+            "authors": paper.get("authors", []),
             "year": paper.get("year", 2023),
             "abstract": paper.get("abstract", "")[:600],
             "doi": paper.get("doi", ""),
@@ -325,7 +387,6 @@ class ReviewerAgent:
 class DataCrawlerAgent:
     def __init__(self):
         self.llm_client = None
-        self.model = None  # 始终初始化，避免 run() 中 AttributeError
         llm_config = config.get_agent_llm("data_crawler")
         if llm_config and llm_config.is_available():
             self.llm_client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
@@ -355,7 +416,6 @@ class DataCrawlerAgent:
 class DataAnalystAgent:
     def __init__(self):
         self.llm_client = None
-        self.model = None  # 始终初始化，避免 analyze() 中 AttributeError
         llm_config = config.get_agent_llm("data_analyst")
         if llm_config and llm_config.is_available():
             self.llm_client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
@@ -364,6 +424,13 @@ class DataAnalystAgent:
             from tools.sandbox import PythonSandbox
             self.sandbox = PythonSandbox(timeout=config.SANDBOX_TIMEOUT, output_dir=config.OUTPUT_DIR)
         except Exception: self.sandbox = None
+        
+        # 🌟 新增：智能包名映射字典 (用于自愈修复)
+        self.package_map = {
+            "sklearn": "scikit-learn", "bs4": "beautifulsoup4", "cv2": "opencv-python",
+            "PIL": "Pillow", "yaml": "PyYAML", "statsmodels": "statsmodels",
+            "seaborn": "seaborn", "scipy": "scipy"
+        }
 
     def analyze(self, requirement: str, csv_path: str, context: Dict) -> Dict:
         if not self.llm_client or not self.sandbox: return {"status": "error", "conclusion": "环境缺失"}
@@ -376,14 +443,50 @@ class DataAnalystAgent:
                     {"role": "user", "content": f"关注研究空白：{gaps}\n目标数据：{csv_path}\n分析需求：{requirement}"}
                 ]
             )
-            code = re.sub(r"^```python\s*|^```\s*|```$", "", response.choices[0].message.content, flags=re.MULTILINE).strip()
-            result = self.sandbox.execute(code)
-            insights = [line.strip() for line in result.output.split('\n') if line.strip()] if result.success else []
+            
+            # 🌟 核心升级：提取代码并防截断
+            code = response.choices[0].message.content.strip()
+            md_tick = chr(96) * 3
+            if code.startswith(f"{md_tick}python"): code = code[9:]
+            elif code.startswith(md_tick): code = code[3:]
+            if code.endswith(md_tick): code = code[:-3]
+            code = code.strip()
+
+            # 🌟 核心升级：Auto-Healing 自愈执行循环
+            max_retries = 3
+            retries = 0
+            result = None
+            
+            while retries < max_retries:
+                result = self.sandbox.execute(code)
+                if result.success:
+                    break
+                    
+                # 检查是否是缺包错误
+                import re, sys, subprocess
+                match = re.search(r"ModuleNotFoundError: No module named '([^']+)'", result.error)
+                if match:
+                    missing_module = match.group(1)
+                    install_name = self.package_map.get(missing_module, missing_module)
+                    print(f"[🔧 自动修复] 正在后台为你自动安装缺失依赖 '{install_name}'...")
+                    try:
+                        subprocess.run([sys.executable, "-m", "pip", "install", install_name], check=True, capture_output=True)
+                        print(f"[🔧 自动修复] ✅ '{install_name}' 安装成功！重新执行图表渲染...")
+                        retries += 1
+                        continue
+                    except Exception as e:
+                        print(f"[⚠️ 自动修复失败] 无法安装 {install_name}: {e}")
+                        break
+                else:
+                    print(f"[⚠️ 数据研究员] 代码执行遇到非依赖错误:\n{result.error[:300]}")
+                    break
+
+            insights = [line.strip() for line in result.output.split('\n') if line.strip()] if result and result.success else []
             
             return {
-                "status": "success" if result.success else "error",
+                "status": "success" if (result and result.success) else "error",
                 "conclusion": insights[-1] if insights else "数据科学分析完毕，详见附图。",
-                "charts": result.figures,
-                "error": result.error
+                "charts": result.figures if result else [],
+                "error": result.error if result else "未知错误"
             }
         except Exception as e: return {"status": "error", "error": str(e)}

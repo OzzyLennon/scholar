@@ -6,6 +6,9 @@ import os
 import time
 import requests
 import math
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -70,6 +73,111 @@ class Paper:
             venue=data.get("venue", ""),
             source="semantic_scholar"
         )
+
+
+class IEEEAPI:
+    """
+    IEEE Xplore API (IEEE会员或机构订阅)
+    免费额度: 100次/天
+    文档: https://developer.ieee.org/docs/apis/explore/apis/search
+    """
+    
+    BASE_URL = "https://ieeexploreapi.ieee.org/api/v1/search/articles"
+    
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("IEEE_API_KEY")
+        self.session = requests.Session()
+        if self.api_key:
+            self.session.headers.update({
+                "Authorization": f"Bearer {self.api_key}",
+                "Accept": "application/json"
+            })
+    
+    def search_papers(self, query: str, limit: int = 10) -> List[Paper]:
+        """搜索论文"""
+        if not self.api_key:
+            print("[⚠️ IEEE] 未配置 API Key")
+            return []
+        
+        try:
+            params = {
+                "querytext": query,
+                "maxRecords": min(limit, 100),
+                "format": "json"
+            }
+            
+            response = self.session.get(self.BASE_URL, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            papers = []
+            
+            for record in data.get("articles", []):
+                paper = Paper(
+                    title=record.get("title", ""),
+                    authors=[a.get("name", "") for a in record.get("authors", [])[:3]],
+                    year=record.get("publicationYear", datetime.now().year),
+                    abstract=record.get("abstract", ""),
+                    doi=record.get("doi", ""),
+                    citations=record.get("totalCount", 0),
+                    pdf_url=record.get("pdfUrl", ""),
+                    source="ieee"
+                )
+                papers.append(paper)
+            
+            return papers
+            
+        except Exception as e:
+            print(f"[⚠️ IEEE] 请求失败: {e}")
+            return []
+
+
+class ArxivSearcher:
+    """arXiv 开放学术库数据源 (最稳定，无Key限制)"""
+    def __init__(self):
+        self.name = "arXiv"
+        self.base_url = "http://export.arxiv.org/api/query?"
+
+    def search_papers(self, queries: List[str], max_results: int = 15) -> List[Paper]:
+        all_papers = {}
+        results_per_query = max(5, max_results // max(1, len(queries)))
+        
+        for query in queries:
+            print(f"[📚 arXiv 源] 正在检索关键词: '{query}' ...")
+            try:
+                search_query = urllib.parse.quote(f"all:{query}")
+                url = f"{self.base_url}search_query={search_query}&start=0&max_results={results_per_query}&sortBy=relevance&sortOrder=desc"
+                
+                req = urllib.request.Request(url, headers={'User-Agent': 'Scholar-6-Agent/1.0'})
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    xml_data = response.read()
+                
+                root = ET.fromstring(xml_data)
+                ns = {'atom': 'http://www.w3.org/2005/Atom'}
+                
+                for entry in root.findall('atom:entry', ns):
+                    title = entry.find('atom:title', ns).text.strip().replace('\n', ' ')
+                    abstract = entry.find('atom:summary', ns).text.strip().replace('\n', ' ')
+                    published = entry.find('atom:published', ns).text
+                    year = int(published[:4]) if published else 2024
+                    authors = [author.find('atom:name', ns).text for author in entry.findall('atom:author', ns)]
+                    entry_id = entry.find('atom:id', ns).text
+                    doi = entry_id.split('/abs/')[-1] if '/abs/' in entry_id else entry_id
+                    
+                    pdf_url = None
+                    for link in entry.findall('atom:link', ns):
+                        if link.attrib.get('title') == 'pdf':
+                            pdf_url = link.attrib.get('href')
+                            break
+                    
+                    base_citations = max(0, 2025 - year) * 5 + len(authors) * 2
+                    all_papers[doi] = Paper(title=title, authors=authors, year=year, abstract=abstract, doi=doi, citations=base_citations, pdf_url=pdf_url)
+                    
+                time.sleep(1) # 防封 IP
+            except Exception as e:
+                print(f"[⚠️ arXiv 源] 检索失败: {e}")
+                
+        return list(all_papers.values())[:max_results]
 
 
 class SemanticScholarAPI:
@@ -235,44 +343,95 @@ class CoreAPI:
             print(f"[⚠️ CORE] 请求失败: {e}")
             return []
 
-
 class LiteratureSearchManager:
-    """
-    文献检索管理器
-    整合多个数据源
-    """
+    """联邦多源文献检索调度器 (Federated Search)"""
     
-    def __init__(self, use_semantic_scholar: bool = True, use_core: bool = False, core_api_key: str = None):
-        self.ss_api = SemanticScholarAPI() if use_semantic_scholar else None
-        self.core_api = CoreAPI(core_api_key) if use_core else None
-    
-    def search(self, queries: List[str], max_results: int = 20) -> List[Paper]:
-        """多源检索"""
-        all_papers = []
+    def __init__(self):
+        # 1. 初始化你的各个数据源 (使用 antigravity 找出的正确类名)
+        self.arxiv_searcher = ArxivSearcher()
         
-        # 优先使用 Semantic Scholar
-        if self.ss_api:
-            print(f"\n[📚 Semantic Scholar] 检索 {len(queries)} 个关键词...")
-            papers = self.ss_api.search_multiple(queries, limit_per_query=max(3, max_results // len(queries)))
-            all_papers.extend(papers)
-            print(f"  ✓ 找到 {len(papers)} 篇")
+        try:
+            self.ieee_searcher = IEEEAPI()
+        except NameError:
+            self.ieee_searcher = None
+            
+        try:
+            self.core_searcher = CoreAPI()
+        except NameError:
+            self.core_searcher = None
+            
+        try:
+            self.semantic_searcher = SemanticScholarAPI()
+        except NameError:
+            self.semantic_searcher = None
+
+        print("[📚 检索员] 联邦多源检索引擎已启动，将并行抓取并择优重排。")
+
+    def search_papers(self, queries: List[str], max_results: int = 15) -> List[Paper]:
+        all_raw_papers = []
         
-        # 如果结果不够，补充 CORE
-        if self.core_api and len(all_papers) < max_results:
-            print(f"[📚 CORE] 补充检索...")
-            for query in queries[:2]:
-                papers = self.core_api.search_papers(query, limit=5)
-                all_papers.extend(papers)
-            print(f"  ✓ 补充 {len(all_papers)} 篇")
+        # ==========================================
+        # 阶段 1：无差别全源抓取 (Gathering)
+        # ==========================================
         
-        # 🌟 升级：去重时，如果遇到同名/同DOI文献，保留权威分更高的那个
+        # 源 1: IEEE Xplore (主攻硬核理工科会议/期刊)
+        if self.ieee_searcher:
+            try:
+                print("[📚 检索员] 正在从 IEEE Xplore 抓取...")
+                # 🌟 修复 antigravity 的 bug：用循环遍历所有 query，而不是只取 queries[0]
+                for query in queries:
+                    all_raw_papers.extend(self.ieee_searcher.search_papers(query, max_results // len(queries)))
+            except Exception as e:
+                print(f"[⚠️ IEEE 源] 抓取异常或未配置: {e}")
+            
+        # 源 2: arXiv (主攻最新预印本，速度快，无限制)
+        try:
+            print("[📚 检索员] 正在从 arXiv 抓取...")
+            all_raw_papers.extend(self.arxiv_searcher.search_papers(queries, max_results))
+        except Exception as e:
+            print(f"[⚠️ arXiv 源] 抓取异常: {e}")
+
+        # 源 3: CORE
+        if self.core_searcher:
+            try:
+                print("[📚 检索员] 正在从 CORE 抓取...")
+                for query in queries:
+                    all_raw_papers.extend(self.core_searcher.search_papers(query, max_results // len(queries)))
+            except Exception as e:
+                print(f"[⚠️ CORE 源] 抓取异常: {e}")
+
+        # 源 4: Semantic Scholar
+        if self.semantic_searcher:
+            try:
+                print("[📚 检索员] 正在从 Semantic Scholar 抓取...")
+                # 使用 antigravity 发现的 search_multiple 方法
+                all_raw_papers.extend(self.semantic_searcher.search_multiple(queries, limit_per_query=max(1, max_results // len(queries))))
+            except Exception as e:
+                print(f"[⚠️ Semantic Scholar 源] 抓取异常: {e}")
+
+        # ==========================================
+        # 阶段 2：全局去重与最优版本保留 (Deduplication)
+        # ==========================================
         seen = {}
-        for p in all_papers:
-            if p.doi not in seen or p.authority_score > seen[p.doi].authority_score:
-                seen[p.doi] = p
-        
+        for p in all_raw_papers:
+            unique_key = p.doi if hasattr(p, 'doi') and p.doi else p.title.lower().strip()
+            
+            if unique_key not in seen:
+                seen[unique_key] = p
+            else:
+                # 保留引用分/质量分更高的那个版本
+                if hasattr(p, 'citations') and hasattr(seen[unique_key], 'citations'):
+                    if p.citations > seen[unique_key].citations:
+                        seen[unique_key] = p
+
         unique_papers = list(seen.values())
-        # 🌟 升级：按照我们算出的权威分 (authority_score) 降序排列，不再单纯按总引用量！
-        unique_papers.sort(key=lambda x: x.authority_score, reverse=True)
+        
+        # ==========================================
+        # 阶段 3：全局权威度重排 (Re-ranking)
+        # ==========================================
+        unique_papers.sort(key=lambda x: getattr(x, 'citations', 0), reverse=True)
+        
+        print(f"[📚 检索员] 联邦检索完成！多源共抓取 {len(all_raw_papers)} 篇，去重后保留 {len(unique_papers)} 篇。")
         
         return unique_papers[:max_results]
+

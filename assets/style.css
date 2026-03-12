@@ -1,0 +1,391 @@
+/* 全局字体与重置 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #334155; /* slate-700 */
+}
+
+/* 覆盖 Streamlit 默认的暗色背景（提供极为干净的亮色版现代化体验） */
+.stApp {
+    background-color: #f8fafc; /* slate-50 */
+    min-height: 100vh;
+}
+
+/* 主标题卡片 (Hero Card) */
+.hero-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0; /* slate-200 */
+    border-radius: 16px;
+    padding: 2.5rem 3rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+.hero-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #0f172a; /* slate-900 */
+    margin: 0;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+}
+
+.hero-subtitle {
+    color: #64748b; /* slate-500 */
+    font-size: 1.1rem;
+    margin-top: 0.75rem;
+    font-weight: 400;
+    line-height: 1.6;
+}
+
+/* 阶段进度条 */
+.stage-bar {
+    display: flex;
+    gap: 10px;
+    margin: 1.5rem 0;
+    flex-wrap: wrap;
+}
+
+.stage-pill {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: all 0.2s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stage-pending  { 
+    background-color: #f1f5f9; 
+    color: #94a3b8; 
+    border-color: #e2e8f0; 
+}
+.stage-running  { 
+    background-color: #eff6ff; 
+    color: #2563eb; 
+    border-color: #bfdbfe; 
+    animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.stage-done     { 
+    background-color: #ecfdf5; 
+    color: #059669; 
+    border-color: #a7f3d0; 
+}
+.stage-error    { 
+    background-color: #fef2f2; 
+    color: #dc2626; 
+    border-color: #fecaca; 
+}
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* 日志框 */
+.log-box {
+    background-color: #0f172a; /* slate-900 */
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 1.25rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.85rem;
+    color: #e2e8f0; /* slate-200 */
+    max-height: 300px;
+    overflow-y: auto;
+    line-height: 1.6;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 结果卡片 */
+.result-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 0.2s ease;
+}
+
+.result-card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.outline-item {
+    border-left: 4px solid #3b82f6; /* blue-500 */
+    background-color: #f8fafc;
+    border-radius: 0 12px 12px 0;
+}
+
+.outline-item:hover {
+    background-color: #f1f5f9;
+}
+
+.gap-card {
+    border-left: 4px solid #f43f5e; /* rose-500 */
+    background-color: #fff1f2;
+}
+
+/* 文献条目 */
+.paper-item {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #6366f1; /* indigo-500 */
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.paper-item.hover-effect:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    background-color: #f8fafc;
+}
+
+.paper-item .title { 
+    color: #0f172a; 
+    font-weight: 600; 
+    font-size: 0.95rem; 
+    line-height: 1.5; 
+    margin-bottom: 6px; 
+}
+.paper-item .meta  { 
+    color: #64748b; 
+    font-size: 0.85rem; 
+}
+
+/* 侧边栏优化 */
+[data-testid="stSidebar"] {
+    background-color: #ffffff !important;
+    border-right: 1px solid #e2e8f0 !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+    color: #475569 !important; /* slate-600 */
+}
+
+[data-testid="stSidebar"] hr {
+    border-top: 1px solid #e2e8f0 !important;
+}
+
+[data-testid="stSidebar"] h3 {
+    color: #0f172a !important; /* slate-900 */
+    font-weight: 700 !important;
+}
+
+/* 科技感徽章 */
+.tech-badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.badge-blue { color: #0284c7; } /* sky-600 */
+.badge-purple { color: #7c3aed; } /* violet-600 */
+.badge-green { color: #16a34a; } /* green-600 */
+.badge-yellow { color: #d97706; } /* amber-600 */
+
+/* 输入框增强 */
+.stTextArea textarea {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important; /* slate-300 */
+    border-radius: 12px !important;
+    color: #0f172a !important;
+    font-size: 1rem !important;
+    padding: 1rem !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.stTextArea textarea:focus {
+    border-color: #3b82f6 !important; /* blue-500 */
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
+    outline: none !important;
+}
+
+/* 加载动画 (Hero) */
+.loading-card {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.loading-bar {
+    height: 6px;
+    background-color: #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 24px;
+    position: relative;
+    width: 200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.loading-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 40%;
+    background-color: #3b82f6; /* blue-500 */
+    border-radius: 6px;
+    animation: loading-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+}
+
+/* 主按钮增强 */
+.stButton > button[kind="primary"] {
+    background-color: #0f172a !important; /* slate-900 */
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 0.75rem 2rem !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    width: 100%;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1) !important;
+    transition: background-color 0.2s, transform 0.1s !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background-color: #1e293b !important; /* slate-800 */
+    transform: translateY(-1px) !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.stButton > button[kind="primary"]:active {
+    background-color: #0f172a !important;
+    transform: translateY(0) !important;
+}
+
+/* 下载按钮 */
+.stDownloadButton button {
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 1rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.stDownloadButton button:hover {
+    background-color: #f1f5f9 !important;
+    border-color: #94a3b8 !important;
+}
+
+/* Tab 样式升级 (Clean minimal) */
+.stTabs [data-baseweb="tab-list"] {
+    background-color: transparent !important;
+    border-bottom: 2px solid #e2e8f0;
+    padding: 0;
+    gap: 1.5rem;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    color: #64748b !important;
+    font-weight: 500;
+    padding: 10px 4px !important;
+    margin-bottom: -2px !important;
+    transition: color 0.2s ease !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: #0f172a !important;
+    background-color: transparent !important;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #0f172a !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+}
+
+/* Metrics (统计数据) 极致干净 */
+[data-testid="metric-container"] {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+[data-testid="metric-container"] label { 
+    color: #64748b !important; 
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+}
+
+[data-testid="metric-container"] [data-testid="stMetricValue"] { 
+    color: #0f172a !important; 
+    font-weight: 700 !important; 
+    font-size: 2rem !important;
+}
+
+/* 标题样式 */
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Streamlit 隐藏不需要的装饰 */
+header[data-testid="stHeader"] {
+    background-color: transparent !important;
+}
+
+/* 解决某些元素上的暗色模式冲突，强制为亮色模式配色 */
+div[data-testid="stMarkdownContainer"] p {
+    color: #334155;
+}
+div[data-testid="stMarkdownContainer"] h1, h2, h3, h4, h5 {
+    color: #0f172a !important;
+}
+
+/* Selectbox 修正 */
+.stSelectbox label {
+    color: #475569 !important;
+    font-weight: 500 !important;
+}
+
+/* Expander 修正 */
+.stExpander {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+.stExpander summary {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    font-weight: 500 !important;
+}
