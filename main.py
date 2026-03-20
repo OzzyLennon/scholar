@@ -2,8 +2,19 @@
 # Scholar - 6-Agent 学术工作流引擎 (究极完全体)
 # ==========================================
 import sys
+import io
 from workflow import SixAgentWorkflow
 from config import config
+
+# 修复Windows控制台编码问题
+if sys.platform == "win32":
+    try:
+        # 设置标准输出为UTF-8编码
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        # 如果设置失败，继续使用默认编码
+        pass
 
 def main():
     """系统主入口"""

@@ -45,7 +45,8 @@ env/
 output/
 *.pdf
 *.html
-*.json
+output/*.json
+output/*.md
 
 # Logs
 *.log

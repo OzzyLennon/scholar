@@ -26,3 +26,16 @@ weasyprint>=60.0
 # 数据处理
 pandas>=2.0.0
 numpy>=1.24.0
+
+# PDF生成补充
+xhtml2pdf>=0.2.10
+
+# 科学计算和可视化
+matplotlib>=3.7.0
+seaborn>=0.13.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+statsmodels>=0.14.0
+
+# 开发工具（可选）
+# pytest>=7.0.0

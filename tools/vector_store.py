@@ -177,6 +177,9 @@ class LocalVectorStore(VectorStore):
 # 3. 统一调度层 (负责 Hybrid RAG 权威重排)
 # ==========================================
 class VectorStoreManager:
+    # 常量定义
+    CANDIDATE_EXPANSION_FACTOR = 3  # 候选集扩展倍数，用于混合检索
+
     # 🌟 核心修改：重新把 prefer_chroma 改回 True，激活高性能向量库！
     def __init__(self, persist_directory: str = "./vector_db", prefer_chroma: bool = True):
         self.store = None
@@ -241,7 +244,7 @@ class VectorStoreManager:
         """基于权威性的混合检索 (Hybrid RAG Re-ranking)"""
         
         # 1. 扩大底层召回范围 (取 3 倍候选集)
-        candidates_count = n_results * 3
+        candidates_count = n_results * self.CANDIDATE_EXPANSION_FACTOR
         results = self.store.query([query], candidates_count)
         
         if not results or not results[0]: 

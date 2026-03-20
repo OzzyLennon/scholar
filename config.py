@@ -32,9 +32,17 @@ class ConfigManager:
         self.MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", "20"))
         self.SANDBOX_TIMEOUT = int(os.getenv("SANDBOX_TIMEOUT", "120"))
         
-        # 修复可能的目录嵌套问题
-        if self.OUTPUT_DIR == "./output/output":
+        # 修复可能的目录嵌套问题（处理"./output/output"等重复路径）
+        # 注意：如果环境变量错误地设置为"./output/output"，这里进行修正
+        original_dir = self.OUTPUT_DIR
+        if self.OUTPUT_DIR.endswith("/output/output"):
+            # 移除多余的"/output"
+            self.OUTPUT_DIR = self.OUTPUT_DIR[:-7]  # 移除最后的"/output"
+            print(f"[Config] 修复输出目录路径: {original_dir} -> {self.OUTPUT_DIR}")
+        elif self.OUTPUT_DIR == "./output/output":
             self.OUTPUT_DIR = "./output"
+            print(f"[Config] 修复输出目录路径: {original_dir} -> {self.OUTPUT_DIR}")
+
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
             
         # ==========================================

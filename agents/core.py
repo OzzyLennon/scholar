@@ -9,8 +9,6 @@ import subprocess
 import os
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
-import markdown
-from xhtml2pdf import pisa
 
 from config import config
 from prompts.system_prompts import (

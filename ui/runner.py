@@ -4,9 +4,13 @@ import builtins
 
 def run_workflow_thread(idea: str, log_q: queue.Queue):
     """在独立线程中运行工作流，通过队列回传状态"""
+    # 保存原始函数引用，确保finally块可以访问
+    _orig_print = builtins.print
+    _orig_header = None
+    wf = None
+
     try:
         # 动态 patch：把 print 重定向到队列
-        _orig_print = builtins.print
         def _q_print(*args, **kwargs):
             msg = " ".join(str(a) for a in args)
             log_q.put(("log", msg))
@@ -41,4 +45,8 @@ def run_workflow_thread(idea: str, log_q: queue.Queue):
         import traceback
         log_q.put(("error", f"{e}\n{traceback.format_exc()}"))
     finally:
-        builtins.print = _orig_print  # type: ignore
+        # 恢复原始函数
+        builtins.print = _orig_print
+        # 恢复原始header函数（如果已修改）
+        if wf is not None and _orig_header is not None:
+            wf._print_header = _orig_header
