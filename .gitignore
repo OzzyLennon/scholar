@@ -63,3 +63,8 @@ Thumbs.db
 # ChromaDB
 chroma_db/
 chroma_data/
+
+# Large model files and backups
+onnx.tar.gz
+backup/
+scholar.bundle
